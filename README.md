@@ -18,3 +18,9 @@ This fork adds analysis capabilities, enabling the computation of network comple
 
 Released under the MIT license.
 All included network models provided under their respective licenses.
+
+### Modify and Recompile
+If you want to change some layers behaviours or add a new layer </br>
+ - Edit [analyzer.coffee](http://ali-masoudi.github.io/netscope/src/analyzer.coffee)
+ - Compile using [watch.sh](http://ali-masoudi.github.io/netscope/scripts/watch.sh)
+
