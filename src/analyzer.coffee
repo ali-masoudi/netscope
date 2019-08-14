@@ -148,6 +148,9 @@ module.exports =
                     params = n.attribs.interp_param
                     pad_beg=params.pad_beg ? 0
                     pad_end=params.pad_end ? 0
+                    d.chOut = d.chIn
+                    d.batchOut = d.batchIn
+                    d.mem.activation = d.wOut*d.hOut*d.chOut*d.batchOut
                     height_in_eff = d.hIn + pad_beg + pad_end;
                     width_in_eff = d.wIn + pad_beg + pad_end;
                     #Shrink
@@ -168,6 +171,8 @@ module.exports =
                         d.wOut = (width_in_eff - 1) / params.shrink_factor + 1
                         d.hOut = d.hOut + (d.hOut - 1) * (params.zoom_factor - 1)
                         d.wOut = d.wOut + (d.wOut - 1) * (params.zoom_factor - 1)
+                    d.hOut=d.hOut
+                    d.wOut=d.wOut
                 when "pooling"
                     #dimensions
                     params = n.attribs.pooling_param
