@@ -455,7 +455,7 @@ module.exports =
                         console.log(n)
                         debugger;
 
-                  when "roipooling"
+                when "roipooling"
                       # 2 parent layers: region proposals, feature vectors
                       roi_proposals = if (n.parents[0].analysis.batchOut > 1) then n.parents[0].analysis else n.parents[1].analysis # parent with batchOut > 1 = region proposals
                       feature_map   = if (n.parents[0].analysis.batchOut > 1) then n.parents[1].analysis else n.parents[0].analysis # features = the other one
@@ -474,6 +474,31 @@ module.exports =
                       d.comp.comp = d.batchOut * d.chIn * d.wIn * d.hIn
                       #memory
                       d.mem.activation = d.wOut*d.hOut*d.chOut*d.batchOut
+                when "interp"
+                    params = n.attribs.interp_param
+                    pad_beg=params.pad_beg ? 0
+                    pad_end=params.pad_end ? 0
+                    height_in_eff = d.hIn + pad_beg + pad_end;
+                    width_in_eff = d.wIn + pad_beg + pad_end;
+                    #Shrink
+                    if params.shrink_factor? && !params.zoom_factor?
+                        d.hOut=(height_in_eff - 1) / params.shrink_factor + 1
+                        d.wOut=(width_in_eff - 1) / params.shrink_factor + 1
+                    #Zoom
+                    else if !params.shrink_factor? && params.zoom_factor?
+                        d.hOut=height_in_eff + (height_in_eff - 1) * (params.zoom_factor - 1)
+                        d.wOut=width_in_eff + (width_in_eff - 1) * (params.zoom_factor - 1)
+                    #Fixed Size
+                    else if params.height? && params.width?
+                        d.hOut=params.height
+                        d.wOut=params.width
+                    #Shrink Then Zoom
+                    else if params.shrink_factor? && params.zoom_factor?
+                        d.hOut = (height_in_eff - 1) / params.shrink_factor + 1
+                        d.wOut = (width_in_eff - 1) / params.shrink_factor + 1
+                        d.hOut = d.hOut + (d.hOut - 1) * (params.zoom_factor - 1)
+                        d.wOut = d.wOut + (d.wOut - 1) * (params.zoom_factor - 1)
+
 
                 else # unknown layer;  print error message;
                     onerror('Unknown Layer: '+layertype)
