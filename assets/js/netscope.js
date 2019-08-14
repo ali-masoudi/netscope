@@ -1,6 +1,3309 @@
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+var Analyzer;
+
+module.exports = Analyzer = class Analyzer {
+  constructor() {}
+
+  analyze(net) {
+    var aspect_ratios, d, dilation, dim_in, failed, feature_map, group, has_bias, height_in_eff, i, infered_dim, isglobal, j, k, kernel, kernel_h, kernel_w, key, l, layertype, len, len1, len2, len3, mem, mode, module, n, n_elements, newshape, num_inputs, num_ops, num_priors, num_region_proposals, numout, op, ops, p, pad_beg, pad_end, pad_h, pad_w, params, parent, parent2, permutation, pooltype, power, prod_in_dims, prod_out_dims, ref, ref1, ref10, ref11, ref12, ref13, ref14, ref15, ref16, ref17, ref18, ref19, ref2, ref20, ref21, ref22, ref23, ref24, ref25, ref26, ref27, ref28, ref29, ref3, ref30, ref31, ref32, ref33, ref34, ref35, ref36, ref37, ref38, ref39, ref4, ref40, ref41, ref42, ref43, ref44, ref45, ref46, ref47, ref48, ref49, ref5, ref50, ref51, ref52, ref53, ref54, ref55, ref56, ref57, ref58, ref6, ref7, ref8, ref9, roi_proposals, scale, settings, shape, shift, size, stride_h, stride_w, summary, trivial_layers, val, width_in_eff;
+    ref = net.sortTopologically();
+    //# Add Input/Output Dimensions + Channels to each Node / Layer
+    // shape.dim: (    N   x   K   x   W   x   H   )
+    //              batch   channel  width   height
+    //               chIn    chOut   wIn     wOut
+    for (i = 0, len = ref.length; i < len; i++) {
+      n = ref[i];
+      layertype = n.type.toLowerCase();
+      // Setup Default Values for Analysis
+      d = n.analysis;
+      d.wIn = d.hIn = d.wOut = d.hOut = d.chIn = d.chOut = 0;
+      d.comp = {
+        macc: 0,
+        comp: 0,
+        add: 0,
+        div: 0,
+        exp: 0
+      };
+      d.mem = {
+        activation: 0,
+        param: 0
+      };
+      d.variants = [];
+      parent = (ref1 = n.parents[0]) != null ? ref1.analysis : void 0;
+      // Setup default channels + dimensions: inherited from parent
+      d.batchOut = d.batchIn = parent != null ? parent.batchOut : void 0;
+      d.wIn = parent != null ? parent.wOut : void 0;
+      d.hIn = parent != null ? parent.hOut : void 0;
+      d.chIn = parent != null ? parent.chOut : void 0;
+      switch (layertype) {
+        case "data":
+        case "input":
+          //dimensions
+          if (((ref2 = n.attribs.input_param) != null ? ref2.shape : void 0) != null) {
+            shape = n.attribs.input_param.shape;
+            d.batchIn = shape.dim[0];
+            d.chIn = shape.dim[1];
+            d.hIn = shape.dim[2];
+            d.wIn = shape.dim[3];
+          } else if (((ref3 = n.attribs.transform_param) != null ? ref3.crop_size : void 0) != null) {
+            d.wIn = d.hIn = n.attribs.transform_param.crop_size;
+            d.chIn = 3; // assume RGB
+            d.batchOut = 1;
+          } else {
+            onerror('Unknown Input Dimensions');
+            debugger;
+          }
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          d.batchOut = d.batchIn;
+          //computation
+          //-- none
+          //memory
+          //-- none
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "convolution":
+          //dimensions
+          params = n.attribs.convolution_param;
+          kernel_w = (ref4 = params.kernel_w) != null ? ref4 : params.kernel_size;
+          kernel_h = (ref5 = params.kernel_h) != null ? ref5 : params.kernel_size;
+          stride_w = (ref6 = params.stride_w) != null ? ref6 : (ref7 = params.stride) != null ? ref7 : 1;
+          stride_h = (ref8 = params.stride_h) != null ? ref8 : (ref9 = params.stride) != null ? ref9 : 1;
+          pad_w = (ref10 = params.pad_w) != null ? ref10 : (ref11 = params.pad) != null ? ref11 : 0;
+          pad_h = (ref12 = params.pad_h) != null ? ref12 : (ref13 = params.pad) != null ? ref13 : 0;
+          numout = params.num_output;
+          group = (ref14 = params.group) != null ? ref14 : 1;
+          dilation = (ref15 = params.dilation) != null ? ref15 : 1;
+          has_bias = ((ref16 = params.bias_term) != null ? ref16 : "true") === "false" ? 0 : 1;
+          // according to http://caffe.berkeleyvision.org/tutorial/layers.html and https://github.com/BVLC/caffe/issues/3656
+          kernel = dilation * (kernel_w - 1) + 1;
+          d.wOut = Math.floor((d.wIn + 2 * pad_w - kernel) / stride_w) + 1;
+          kernel = dilation * (kernel_h - 1) + 1;
+          d.hOut = Math.floor((d.hIn + 2 * pad_h - kernel) / stride_h) + 1;
+          d.chOut = numout;
+          //computation
+          d.comp.macc = (kernel_w * kernel_h) * (d.wOut * d.hOut) * d.chIn * d.chOut * d.batchOut / group;
+          //memory
+          d.mem.param = (kernel_w * kernel_h) * d.chIn * d.chOut / group + has_bias * d.chOut;
+          d.mem.activation = (d.wOut * d.hOut) * d.chOut * d.batchOut;
+          // CACHE AND BANDWIDTH for Implementation Variants
+          if (do_variants_analysis) {
+            d.variants.push({
+              name: "complete outputs, input cache",
+              cache: d.chIn * kernel_h * d.wIn + d.chIn * kernel_h * kernel_w, // line buffers // param cache
+              readBW: d.chOut * d.chIn * (d.wIn * d.hIn),
+              writeBW: d.chOut * (d.wOut * d.hOut), // ideal
+              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
+            });
+            d.variants.push({
+              name: "complete inputs, input cache",
+              cache: kernel_h * d.wIn + d.chIn * kernel_h * kernel_w, // line buffers // param cache
+              readBW: d.chIn * ((d.chOut + 1) * (d.wIn * d.hIn)),
+              writeBW: d.chIn * (d.chOut * (d.wOut * d.hOut)),
+              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
+            });
+            d.variants.push({
+              name: "complete inputs, input + output cache",
+              cache: kernel_h * d.wIn + d.chIn * kernel_h * kernel_w + d.wIn * d.hIn * d.chOut, // line buffers // param cache // output cache
+              readBW: d.chIn * (d.wIn * d.hIn), // ideal
+              writeBW: d.chOut * (d.wOut * d.hOut), // ideal
+              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
+            });
+            d.variants.push({
+              name: "streaming, input cache",
+              cache: d.chIn * kernel_h * d.wIn,
+              readBW: d.chIn * (d.wIn * d.hIn),
+              writeBW: d.chOut * (d.wOut * d.hOut),
+              confBW: d.hIn * (d.chIn * d.chOut * (kernel_w * kernel_h))
+            });
+            d.variants.push({
+              name: "streaming, input + config cache",
+              cache: d.chIn * kernel_h * d.wIn + d.chIn * d.chOut * (kernel_h * kernel_w),
+              readBW: d.chIn * (d.wIn * d.hIn),
+              writeBW: d.chOut * (d.wOut * d.hOut),
+              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
+            });
+            d.variants.push({
+              name: "streaming, temp.",
+              img_cache: kernel_h > 1 ? d.chIn * kernel_h * d.wIn : d.chIn,
+              img_dim: d.chIn + "ch ∙ " + d.wIn + " × " + kernel_h + " × 32b",
+              flt_cache: d.chIn * d.chOut * (kernel_h * kernel_w),
+              squeeze_cache: n.name.indexOf("squeeze") > -1 ? d.chOut * d.wOut * d.hOut : ""
+            });
+          }
+          break;
+        case "innerproduct":
+        case "inner_product":
+          //dimensions
+          numout = n.attribs.inner_product_param.num_output;
+          has_bias = ((ref17 = n.attribs.inner_product_param.bias_term) != null ? ref17 : "true") === "false" ? 0 : 1;
+          d.wOut = 1;
+          d.hOut = 1;
+          d.chOut = numout;
+          //computation
+          d.comp.macc = (d.wIn * d.hIn) * d.chIn * d.chOut * d.batchOut;
+          //memory
+          d.mem.param = d.wIn * d.hIn * d.chIn * d.chOut + has_bias * d.chOut;
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "interp":
+          params = n.attribs.interp_param;
+          pad_beg = (ref18 = params.pad_beg) != null ? ref18 : 0;
+          pad_end = (ref19 = params.pad_end) != null ? ref19 : 0;
+          d.chOut = d.chIn;
+          d.batchOut = d.batchIn;
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          height_in_eff = d.hIn + pad_beg + pad_end;
+          width_in_eff = d.wIn + pad_beg + pad_end;
+          if ((params.shrink_factor != null) && (params.zoom_factor == null)) {
+            d.hOut = (height_in_eff - 1) / params.shrink_factor + 1;
+            d.wOut = (width_in_eff - 1) / params.shrink_factor + 1;
+          } else if ((params.shrink_factor == null) && (params.zoom_factor != null)) {
+            d.hOut = height_in_eff + (height_in_eff - 1) * (params.zoom_factor - 1);
+            d.wOut = width_in_eff + (width_in_eff - 1) * (params.zoom_factor - 1);
+          //Fixed Size
+          } else if ((params.height != null) && (params.width != null)) {
+            d.hOut = params.height;
+            d.wOut = params.width;
+          //Shrink Then Zoom
+          } else if ((params.shrink_factor != null) && (params.zoom_factor != null)) {
+            d.hOut = (height_in_eff - 1) / params.shrink_factor + 1;
+            d.wOut = (width_in_eff - 1) / params.shrink_factor + 1;
+            d.hOut = d.hOut + (d.hOut - 1) * (params.zoom_factor - 1);
+            d.wOut = d.wOut + (d.wOut - 1) * (params.zoom_factor - 1);
+          }
+          d.hOut = d.hOut;
+          d.wOut = d.wOut;
+          break;
+        case "pooling":
+          //dimensions
+          params = n.attribs.pooling_param;
+          kernel_w = (ref20 = params.kernel_w) != null ? ref20 : params.kernel_size;
+          kernel_h = (ref21 = params.kernel_h) != null ? ref21 : params.kernel_size;
+          stride_w = (ref22 = params.stride_w) != null ? ref22 : (ref23 = params.stride) != null ? ref23 : 1;
+          stride_h = (ref24 = params.stride_h) != null ? ref24 : (ref25 = params.stride) != null ? ref25 : 1;
+          pad_w = (ref26 = params.pad_w) != null ? ref26 : (ref27 = params.pad) != null ? ref27 : 0;
+          pad_h = (ref28 = params.pad_h) != null ? ref28 : (ref29 = params.pad) != null ? ref29 : 0;
+          isglobal = (ref30 = params.global_pooling) != null ? ref30 : 0;
+          pooltype = ((ref31 = params.pool) != null ? ref31 : 'MAX').toUpperCase();
+          d.chOut = d.chIn;
+          // according to http://caffe.berkeleyvision.org/tutorial/layers.html and https://github.com/BVLC/caffe/issues/3656
+          d.wOut = Math.ceil((d.wIn + 2 * pad_w - kernel_w) / stride_w) + 1;
+          d.hOut = Math.ceil((d.hIn + 2 * pad_h - kernel_h) / stride_h) + 1;
+          if (isglobal) {
+            d.wOut = d.hOut = 1;
+          }
+          //computation
+          num_ops = isglobal ? (d.wIn * d.hIn) * d.chIn * d.batchOut : (d.wOut * d.hOut) * kernel_h * kernel_w * d.chOut * d.batchOut;
+          if (pooltype === 'MAX') {
+            d.comp.comp = num_ops;
+          } else if (pooltype === 'AVE') {
+            d.comp.add = num_ops;
+          } else {
+            //d.comp.div = (d.wOut*d.hOut*d.chOut) #divide by const.
+            onerror(`Unknown pooling type ${pooltype}`);
+          }
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "batchnorm":
+        case "bn":
+          //dimensions
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          //computation
+          // BN: subtract mean, divide by variance for each channel
+          // averages during training: over spatial dims + batch
+          d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
+          d.comp.div = d.wIn * d.hIn * d.chIn * d.batchOut;
+          //memory
+          d.mem.param = d.chIn * 2;
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "lrn":
+        case "normalize":
+          //dimensions
+          //default mode: ACROSS_CHANNELS
+          mode = (ref32 = (ref33 = n.attribs.lrn_param) != null ? ref33.norm_region : void 0) != null ? ref32 : 'ACROSS_CHANNELS';
+          size = (ref34 = (ref35 = n.attribs.lrn_param) != null ? ref35.local_size : void 0) != null ? ref34 : 1;
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          //computation
+          //  Each input value is divided by (1+(α/n)∑xi^2)^β
+          num_inputs = d.wIn * d.hIn * d.chIn * d.batchOut;
+          d.comp.macc = num_inputs * size; // (∑xi^2)
+          d.comp.add = num_inputs; // (1+...)
+          d.comp.exp = num_inputs; // (...)^β
+          d.comp.div = num_inputs * 2; // (α/n)*... + divide by sum
+          //memory
+          d.mem.param = 2; // alpha, beta
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "concat":
+          //dimensions
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          // sum up channels from inputs
+          d.chIn = 0;
+          ref36 = n.parents;
+          for (j = 0, len1 = ref36.length; j < len1; j++) {
+            p = ref36[j];
+            d.chIn += p.analysis.chOut;
+          }
+          d.chOut = d.chIn;
+          ref37 = n.parents;
+          for (k = 0, len2 = ref37.length; k < len2; k++) {
+            p = ref37[k];
+            // check input dimensions
+            failed = failed || (p.analysis.wOut !== d.wIn || p.analysis.hOut !== d.hIn);
+          }
+          if (failed) {
+            window.onerror('CONCAT: input dimensions dont agree!');
+          }
+          //computation
+          // --none
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        //relu/dropout use some memory, do some comparisons
+        case "relu":
+        case "relu6":
+        case "elu":
+        case "prelu":
+        case "dropout":
+          //dimensions
+          d.wIn = parent.wOut;
+          d.hIn = parent.hOut;
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn = parent.chOut;
+          //computation
+          d.comp.comp = d.wIn * d.hIn * d.chIn * d.batchOut;
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "softmax":
+        case "softmaxwithloss":
+        case "softmax_loss":
+          //dimensions
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          //computation
+          d.comp.exp = d.wIn * d.hIn * d.chIn * d.batchOut;
+          d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
+          d.comp.div = d.wIn * d.hIn * d.chIn * d.batchOut;
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "flatten":
+          //dimensions
+          d.wOut = d.hOut = 1;
+          d.chOut = d.chIn * d.wIn * d.hIn;
+          //computation
+          // --none
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "eltwise":
+          //dimensions
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          // check input dimensions
+          failed = false;
+          ref38 = n.parents;
+          for (l = 0, len3 = ref38.length; l < len3; l++) {
+            p = ref38[l];
+            failed = failed || (d.wIn !== p.analysis.wOut) || (d.hIn !== p.analysis.hOut);
+          }
+          if (failed) {
+            onerror('ELTWISE: input dimensions dont agree in ' + n.name);
+          }
+          //computation
+          op = (ref39 = (ref40 = n.eltwise_param) != null ? (ref41 = ref40.operation) != null ? ref41.toUpperCase() : void 0 : void 0) != null ? ref39 : 'SUM';
+          if (op === 'SUM') {
+            d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
+          } else if (op === 'MAX') {
+            d.comp.comp = d.wIn * d.hIn * d.chIn * d.batchOut;
+          } else if (op === 'PROD') {
+            d.comp.macc = d.wIn * d.hIn * d.chIn * d.batchOut;
+          } else {
+            onerror('ELTWISE: unknown operation ' + op);
+          }
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "deconvolution":
+          //dimensions
+          params = n.attribs.convolution_param;
+          kernel_w = (ref42 = params.kernel_w) != null ? ref42 : params.kernel_size;
+          kernel_h = (ref43 = params.kernel_h) != null ? ref43 : params.kernel_size;
+          stride_w = (ref44 = params.stride_w) != null ? ref44 : (ref45 = params.stride) != null ? ref45 : 1;
+          stride_h = (ref46 = params.stride_h) != null ? ref46 : (ref47 = params.stride) != null ? ref47 : 1;
+          pad_w = (ref48 = params.pad_w) != null ? ref48 : (ref49 = params.pad) != null ? ref49 : 0;
+          pad_h = (ref50 = params.pad_h) != null ? ref50 : (ref51 = params.pad) != null ? ref51 : 0;
+          numout = params.num_output;
+          d.wOut = stride_w * (d.wIn - 1) + kernel_w - 2 * pad_w;
+          d.hOut = stride_h * (d.hIn - 1) + kernel_h - 2 * pad_h;
+          d.chOut = numout;
+          //computation
+          d.comp.macc = d.chIn * d.chOut * d.wOut * d.hOut * (kernel_w / stride_w) * (kernel_h / stride_h) * d.batchOut;
+          //memory
+          d.mem.param = kernel_w * kernel_h * d.chIn * d.chOut;
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        case "crop":
+          //dimensions
+          //# crop to dims of 2nd parent
+          parent2 = n.parents[1].analysis;
+          d.wOut = parent2.wOut;
+          d.hOut = parent2.hOut;
+          d.chOut = d.chIn;
+          //computation
+          // --none
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        //scale layer use activation memory and does multiplies
+        case "scale":
+          //dimensions
+          //# assume pass-through
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          //computation: scale = multiplication
+          d.comp.macc = d.wOut * d.hOut * d.chOut * d.batchOut;
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          break;
+        //implicit layers use activation memory, but no computation
+        case "implicit":
+          //dimensions
+          //fix potentially undefined inputs
+          d.wIn = (ref52 = d.wIn) != null ? ref52 : "?";
+          d.hIn = (ref53 = d.hIn) != null ? ref53 : "?";
+          d.chIn = (ref54 = d.chIn) != null ? ref54 : "?";
+          d.batchIn = (ref55 = d.batchIn) != null ? ref55 : "?";
+          //# assume pass-through
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          d.batchOut = d.batchIn;
+          //computation
+          // --none
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          if (isNaN(d.mem.activation)) {
+            d.mem.activation = 0;
+          }
+          break;
+        // accuracy layers just pass through
+        case "accuracy":
+          //dimensions
+          //# assume pass-through
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          break;
+        //computation
+        // --none
+        //memory
+        // --none
+
+        // power layers: computes outputs y = (shift + scale * x) ^ power
+        case "power":
+          params = n.attribs.power_param;
+          power = (ref56 = params.power) != null ? ref56 : 1;
+          scale = (ref57 = params.scale) != null ? ref57 : 1;
+          shift = (ref58 = params.shift) != null ? ref58 : 0;
+          //dimensions: pass-through
+          d.wOut = d.wIn;
+          d.hOut = d.hIn;
+          d.chOut = d.chIn;
+          //computation
+          n_elements = d.wOut * d.hOut * d.chOut;
+          d.comp.macc = scale !== 1 ? n_elements : 0;
+          d.comp.add = shift !== 0 ? n_elements : 0;
+          d.comp.exp = power !== 1 ? n_elements : 0;
+          //memory
+          d.mem.activation = n_elements;
+          break;
+        // permute layers reorder the channels / dimensions
+        case "permute":
+          permutation = n.attribs.permute_param.order.slice(0); //copy array
+          //dimension order: [batch, channels, height, width] according to http://caffe.berkeleyvision.org/tutorial/layers.html
+          dim_in = [d.batchIn, d.chIn, d.hIn, d.wIn];
+          d.batchOut = dim_in[permutation[0]];
+          d.chOut = dim_in[permutation[1]];
+          d.hOut = dim_in[permutation[2]];
+          d.wOut = dim_in[permutation[3]];
+          break;
+        case "priorbox":
+          settings = n.attribs.prior_box_param;
+          aspect_ratios = settings.aspect_ratio;
+          num_priors = settings.min_size * settings.aspect_ratio;
+          if (settings.flip) {
+            num_priors *= 2;
+          }
+          d.batchOut = d.batchIn;
+          d.chOut = 2;
+          d.hOut = 4;
+          d.wOut = num_priors;
+          break;
+        //computation
+        // -- neglectable
+        //memory
+        // --neglectable
+
+        // reshape layers just permute dimensions, assume on-the-fly operation
+        case "reshape":
+          //get reshape parameters
+          newshape = n.attribs.reshape_param.shape.dim.slice(0); // copy array
+          //debugger
+          console.log(newshape);
+          if ((!newshape[0]) || (newshape[0] === 0)) {
+            newshape[0] = d.batchIn;
+          }
+          if ((!newshape[1]) || (newshape[1] === 0)) {
+            newshape[1] = d.chIn;
+          }
+          if ((!newshape[2]) || (newshape[2] === 0)) {
+            newshape[2] = d.hIn;
+          }
+          if ((!newshape[3]) || (newshape[3] === 0)) {
+            newshape[3] = d.wIn;
+          }
+          // -1 as dimension = infer from other dimensions, allowed for at most 1 dimension
+          prod_in_dims = d.batchIn * d.wIn * d.hIn * d.chIn;
+          prod_out_dims = newshape[0] * newshape[1] * newshape[2] * newshape[3] * (-1); // -1 compensates "-1" in newshape
+          infered_dim = prod_in_dims / prod_out_dims;
+          if (newshape[0] === -1) {
+            newshape[0] = infered_dim;
+          }
+          if (newshape[1] === -1) {
+            newshape[1] = infered_dim;
+          }
+          if (newshape[2] === -1) {
+            newshape[2] = infered_dim;
+          }
+          if (newshape[3] === -1) {
+            newshape[3] = infered_dim;
+          }
+          // assign output dimensions
+          d.batchOut = newshape[0];
+          d.chOut = newshape[1];
+          d.hOut = newshape[2];
+          d.wOut = newshape[3];
+          break;
+        //computation
+        // --none (some shifting-around only)
+        //memory
+        case "python":
+          module = n.attribs.python_param.module;
+          if (module === "rpn.proposal_layer") {
+            // ASSUME TEST.RPN_POST_NMS_TOP_N = 300
+            num_region_proposals = 300; // see RPN_POST_NMS_TOP_N in lib/fast_rcnn/config.py
+            
+            //output dimensions:
+            d.wOut = d.hOut = 1;
+            d.chOut = 5; // rectangle (x1, y1, x2, y2) (and image batch index n)
+            d.batchOut = num_region_proposals;
+            //computation
+            d.comp.div = (num_region_proposals * (num_region_proposals - 1)) / 2;
+            d.comp.macc = d.batchIn * (4 + 4) * 9 * (d.wIn * d.hIn) + 2 * d.comp.div;
+            d.comp.add = d.batchIn * (8 + 2) * 9 * (d.wIn * d.hIn) + 6 * d.comp.div;
+            d.comp.comp = d.batchIn * (4 + 2) * 9 * (d.wIn * d.hIn) + (9 * (d.wIn * d.hIn)) ** 2 + 7 * d.comp.div;
+            d.comp.exp = d.batchIn * 2 * 9 * (d.wIn * d.hIn);
+            //memory
+            d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
+          } else {
+            onerror('Unknown Python Layer: ' + module);
+            console.log(n);
+            debugger;
+          }
+          break;
+        case "roipooling":
+          // 2 parent layers: region proposals, feature vectors
+          roi_proposals = (n.parents[0].analysis.batchOut > 1) ? n.parents[0].analysis : n.parents[1].analysis; // parent with batchOut > 1 = region proposals
+          feature_map = (n.parents[0].analysis.batchOut > 1) ? n.parents[1].analysis : n.parents[0].analysis; // features = the other one
+          // Input / Output dimensions
+          d.chIn = d.chOut = feature_map.chIn;
+          d.hIn = feature_map.hIn;
+          d.wIn = feature_map.wIn;
+          d.hOut = n.attribs.roi_pooling_param.pooled_h;
+          d.wOut = n.attribs.roi_pooling_param.pooled_w;
+          d.batchIn = d.batchOut = roi_proposals.batchOut;
+          //spatial_scale = n.attribs.roi_pooling_param.spatial_scale
+          //computation
+          d.comp.add = d.batchOut;
+          d.comp.div = d.batchOut;
+          d.comp.macc = d.batchOut;
+          d.comp.comp = d.batchOut * d.chIn * d.wIn * d.hIn;
+          //memory
+          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut; // unknown layer;  print error message;
+          break;
+        default:
+          onerror('Unknown Layer: ' + layertype);
+          console.log(n);
+          debugger;
+      }
+      trivial_layers = ["softmax", "softmaxwithloss", "softmax_loss", "dropout", "concat", "accuracy"];
+      if (!($.inArray(layertype, trivial_layers) >= 0)) {
+        summary = {
+          in: `${d.chIn}ch ⋅ ${d.wIn}×${d.hIn} (×${d.batchIn})`,
+          out: `${d.chOut}ch ⋅ ${d.wOut}×${d.hOut} (×${d.batchOut})`
+        };
+        // concat number of required operations into string
+        ops = ((function() {
+          var ref59, results;
+          ref59 = d.comp;
+          results = [];
+          for (key in ref59) {
+            val = ref59[key];
+            if (val !== 0) {
+              results.push(val + '⋅' + key);
+            }
+          }
+          return results;
+        })()).join(', ');
+        if (ops !== "") {
+          //debugger
+          summary.ops = ops;
+        }
+        // concat memory requirements into string
+        mem = ((function() {
+          var ref59, results;
+          ref59 = d.mem;
+          results = [];
+          for (key in ref59) {
+            val = ref59[key];
+            if (val !== 0) {
+              results.push(val + '⋅' + key);
+            }
+          }
+          return results;
+        })()).join(', ');
+        if (mem !== "") {
+          summary.mem = mem;
+        }
+        // attach
+        _.extend(n.attribs, {
+          analysis: summary
+        });
+      }
+    }
+    return net;
+  }
+
+};
+
+
+},{}],2:[function(require,module,exports){
+var AppController, Editor, Renderer;
+
+Renderer = require('./renderer.coffee');
+
+Editor = require('./editor.coffee');
+
+module.exports = AppController = class AppController {
+  constructor() {
+    this.inProgress = false;
+    this.$spinner = $('#net-spinner');
+    this.$netBox = $('#net-container');
+    this.$netError = $('#net-error');
+    this.svg = '#net-svg';
+    this.$tableBox = $('#table-container');
+    this.table = '#table-content';
+    this.setupErrorHandler();
+  }
+
+  startLoading(loaderFunc, loader, ...args) {
+    if (this.inProgress) {
+      return;
+    }
+    this.$netError.hide();
+    this.$netBox.hide();
+    this.$tableBox.hide();
+    this.$spinner.show();
+    return loaderFunc(...args, (net) => {
+      return this.completeLoading(net, loader);
+    });
+  }
+
+  completeLoading(net, loader) {
+    var editlink, extendlink;
+    this.$spinner.hide();
+    $('#net-title').html(net.name.replace(/_/g, ' '));
+    $('title').text(net.name.replace(/_/g, ' ') + ' — Netscope CNN Analyzer');
+    editlink = $("<a>(edit)</a>").addClass("editlink");
+    editlink.appendTo($('#net-title'));
+    editlink.click(() => {
+      return this.showEditor(loader);
+    });
+    this.$netBox.show();
+    this.$tableBox.show();
+    $(this.svg).empty();
+    $('.qtip').remove();
+    this.renderer = new Renderer(net, this.svg, this.table);
+    if (!window.do_variants_analysis) {
+      $("<br>").appendTo(this.table);
+      extendlink = $('<a>Excel-compatible Analysis Results (experimental)</a>');
+      extendlink.click(() => {
+        window.do_variants_analysis = true;
+        return this.renderer.renderTable();
+      });
+      extendlink.appendTo(this.table);
+    }
+    return this.inProgress = false;
+  }
+
+  makeLoader(loaderFunc, loader) {
+    return (...args) => {
+      return this.startLoading(loaderFunc, loader, ...args);
+    };
+  }
+
+  showEditor(loader) {
+    // Display the editor by lazily loading CodeMirror.
+    // loader is an instance of a Loader.
+    if (_.isUndefined(window.CodeMirror)) {
+      return $.getScript('assets/js/lib/codemirror.min.js', () => {
+        return this.netEditor = new Editor(this.makeLoader(loader.load, loader), loader);
+      });
+    } else {
+      return this.netEditor.reload(loader.load, loader);
+    }
+  }
+
+  setupErrorHandler() {
+    return window.onerror = (message, filename, lineno, colno, e) => {
+      var msg;
+      msg = message;
+      if (!(_.isUndefined(e) || _.isUndefined(e.line) || _.isUndefined(e.column))) {
+        msg = _.template('Line ${line}, Column ${column}: ${message}')(e);
+      }
+      this.$spinner.hide();
+      $('.msg', this.$netError).html(msg);
+      this.$netError.show();
+      return this.inProgress = false;
+    };
+  }
+
+};
+
+
+},{"./editor.coffee":5,"./renderer.coffee":9}],3:[function(require,module,exports){
+var Analyzer, CaffeParser, Network, Parser, generateLayers, generateNetwork,
+  hasProp = {}.hasOwnProperty;
+
+Parser = require('./parser');
+
+Network = require('../network.coffee');
+
+Analyzer = require('../analyzer.coffee');
+
+generateLayers = function(descriptors, phase) {
+  var entry, headerKeys, j, layer, layerDesc, layers, len;
+  if (phase == null) {
+    phase = 'train';
+  }
+  layers = [];
+  for (j = 0, len = descriptors.length; j < len; j++) {
+    entry = descriptors[j];
+    // Support the deprecated Caffe 'layers' key as well.
+    layerDesc = entry.layer || entry.layers;
+    if (layerDesc != null) {
+      layer = {};
+      headerKeys = ['name', 'type', 'top', 'bottom'];
+      _.extend(layer, _.pick(layerDesc, headerKeys));
+      layer.attribs = _.omit(layerDesc, headerKeys);
+      layers.push(layer);
+    } else {
+      console.log('Unidentified entry ignored: ', entry);
+    }
+  }
+  layers = _.filter(layers, function(layer) {
+    var layerPhase, ref;
+    layerPhase = (ref = layer.attribs.include) != null ? ref.phase : void 0;
+    return !((layerPhase != null) && layerPhase !== phase);
+  });
+  return layers;
+};
+
+generateNetwork = function(layers, header) {
+  var children, curNode, dataNode, dims, getNodes, getSingleNode, i, implicitLayers, inplaceChild, inplaceOps, inplaceTable, input, inputs, j, k, l, layer, len, len1, len2, len3, m, n, net, node, nodeTable, ref;
+  nodeTable = {};
+  implicitLayers = [];
+  net = new Network(header.name);
+  getSingleNode = (name) => {
+    var node;
+    node = nodeTable[name];
+    // Caffe allows top to be a layer which isn't explicitly
+    // defined. Create an implicit layer if this is detected.
+    if (node == null) {
+      debugger;
+      node = net.createNode(name, 'implicit');
+      nodeTable[name] = node;
+    }
+    return node;
+  };
+  getNodes = (names, exclude) => {
+    names = [].concat(names);
+    if (exclude != null) {
+      _.pullAll(names, exclude);
+    }
+    return _.map(names, getSingleNode);
+  };
+// Build the node LUT.
+  for (j = 0, len = layers.length; j < len; j++) {
+    layer = layers[j];
+    nodeTable[layer.name] = net.createNode(layer.name, layer.type, layer.attribs, {});
+  }
+  // Connect layers.
+  inplaceTable = {};
+  for (l = 0, len1 = layers.length; l < len1; l++) {
+    layer = layers[l];
+    node = nodeTable[layer.name];
+    if (layer.top != null) {
+      if (layer.top === layer.bottom) {
+        // This is an inplace node. We will treat this specially.
+        // Note that this would have otherwise introduced a cycle,
+        // violating the requirements of a DAG.
+        if (inplaceTable[layer.top] == null) {
+          inplaceTable[layer.top] = [];
+        }
+        inplaceTable[layer.top].push(node);
+        continue;
+      } else {
+        node.addChildren(getNodes(layer.top, [layer.name]));
+      }
+    }
+    if (layer.bottom != null) {
+      node.addParents(getNodes(layer.bottom, [].concat(layer.top)));
+    }
+  }
+  for (k in inplaceTable) {
+    if (!hasProp.call(inplaceTable, k)) continue;
+    inplaceOps = inplaceTable[k];
+    curNode = nodeTable[k];
+    curNode.coalesce = inplaceOps;
+    children = curNode.detachChildren();
+    for (m = 0, len2 = inplaceOps.length; m < len2; m++) {
+      inplaceChild = inplaceOps[m];
+      inplaceChild.annotation = 'InPlace';
+      curNode.addChild(inplaceChild);
+      curNode = inplaceChild;
+    }
+    curNode.addChildren(children);
+  }
+  // Patch in data layer parameters.
+  if (((header != null ? header.input : void 0) != null) && (((header != null ? header.input_dim : void 0) != null) || ((header != null ? (ref = header.input_shape) != null ? ref.dim : void 0 : void 0) != null))) {
+    inputs = [].concat(header.input);
+    dims = header.input_dim || header.input_shape.dim;
+    if (inputs.length === (dims.length * 0.25)) {
+      for (i = n = 0, len3 = inputs.length; n < len3; i = ++n) {
+        input = inputs[i];
+        dataNode = nodeTable[input];
+        dataNode.type = 'data';
+        dataNode.attribs.input_param = {
+          shape: {
+            dim: dims.slice(i * 4, (i + 1) * 4)
+          }
+        };
+      }
+    } else {
+      console.log('Inconsistent input dimensions.');
+    }
+  }
+  return net;
+};
+
+module.exports = CaffeParser = class CaffeParser {
+  static parse(txt, phase) {
+    var NetworkAnalyzer, header, layerDesc, layers, network;
+    [header, layerDesc] = Parser.parse(txt);
+    // if header is already a layer instead of a 'global header' with network name etc...:
+    if (header.layer) {
+      layerDesc.unshift(header);
+      header = {
+        name: 'Unnamed Network'
+      };
+    }
+    // extract input_shape field from layerDesc to header
+    if ((layerDesc[0].input_dim != null) || (layerDesc[0].input_shape != null)) {
+      _.extend(header, layerDesc[0]);
+    }
+    layers = generateLayers(layerDesc, phase);
+    network = generateNetwork(layers, header);
+    NetworkAnalyzer = new Analyzer();
+    network = NetworkAnalyzer.analyze(network);
+    return network;
+  }
+
+};
+
+
+},{"../analyzer.coffee":1,"../network.coffee":8,"./parser":4}],4:[function(require,module,exports){
+module.exports = (function() {
+  "use strict";
+
+  function peg$subclass(child, parent) {
+    function ctor() { this.constructor = child; }
+    ctor.prototype = parent.prototype;
+    child.prototype = new ctor();
+  }
+
+  function peg$SyntaxError(message, expected, found, location) {
+    this.message  = message;
+    this.expected = expected;
+    this.found    = found;
+    this.location = location;
+    this.name     = "SyntaxError";
+
+    if (typeof Error.captureStackTrace === "function") {
+      Error.captureStackTrace(this, peg$SyntaxError);
+    }
+  }
+
+  peg$subclass(peg$SyntaxError, Error);
+
+  function peg$parse(input) {
+    var options = arguments.length > 1 ? arguments[1] : {},
+        parser  = this,
+
+        peg$FAILED = {},
+
+        peg$startRuleFunctions = { Proto_text: peg$parseProto_text },
+        peg$startRuleFunction  = peg$parseProto_text,
+
+        peg$c0 = function(doc) { return doc; },
+        peg$c1 = { type: "other", description: "whitespace" },
+        peg$c2 = /^[ \t\n\r]/,
+        peg$c3 = { type: "class", value: "[ \\t\\n\\r]", description: "[ \\t\\n\\r]" },
+        peg$c4 = { type: "other", description: "whitespace or comment" },
+        peg$c5 = function(first, v) { return v; },
+        peg$c6 = { type: "other", description: "comment" },
+        peg$c7 = "#",
+        peg$c8 = { type: "literal", value: "#", description: "\"#\"" },
+        peg$c9 = { type: "any", description: "any character" },
+        peg$c10 = function(first, m) { return m; },
+        peg$c11 = function(first, rest) {
+              var result = {};
+              var kvPairs = [first].concat(rest);
+              for (var i = 0; i < kvPairs.length; i++)
+              {
+                var k = kvPairs[i].key;
+                var v = kvPairs[i].value;
+                if(k in result)
+                {
+                  result[k] = [].concat(result[k]);
+                  result[k].push(v);
+              }
+                else
+                {
+                  result[k] = v;
+                }
+              }
+              return result;
+          },
+        peg$c12 = ":",
+        peg$c13 = { type: "literal", value: ":", description: "\":\"" },
+        peg$c14 = function(key, value) {
+            return {key: key, value: value};
+          },
+        peg$c15 = "[",
+        peg$c16 = { type: "literal", value: "[", description: "\"[\"" },
+        peg$c17 = ",",
+        peg$c18 = { type: "literal", value: ",", description: "\",\"" },
+        peg$c19 = function(v) { return v; },
+        peg$c20 = "]",
+        peg$c21 = { type: "literal", value: "]", description: "\"]\"" },
+        peg$c22 = function(entries) {
+              return entries;
+            },
+        peg$c23 = "{",
+        peg$c24 = { type: "literal", value: "{", description: "\"{\"" },
+        peg$c25 = function(key, first, m) { return m; },
+        peg$c26 = "}",
+        peg$c27 = { type: "literal", value: "}", description: "\"}\"" },
+        peg$c28 = function(key, first, rest) {
+              var elems = [first].concat(rest);
+              var merged = {};
+              for (var i = 0; i < elems.length; ++i)
+              {
+                  for(var k in elems[i])
+                  {
+                      merged[k] = elems[i][k];
+                  }
+              }
+              var result = {};
+              result[key] = merged;
+              return result;
+            },
+        peg$c29 = { type: "other", description: "number" },
+        peg$c30 = function() { return parseFloat(text()); },
+        peg$c31 = /^[eE]/,
+        peg$c32 = { type: "class", value: "[eE]", description: "[eE]" },
+        peg$c33 = ".",
+        peg$c34 = { type: "literal", value: ".", description: "\".\"" },
+        peg$c35 = "0",
+        peg$c36 = { type: "literal", value: "0", description: "\"0\"" },
+        peg$c37 = /^[1-9]/,
+        peg$c38 = { type: "class", value: "[1-9]", description: "[1-9]" },
+        peg$c39 = "-",
+        peg$c40 = { type: "literal", value: "-", description: "\"-\"" },
+        peg$c41 = "+",
+        peg$c42 = { type: "literal", value: "+", description: "\"+\"" },
+        peg$c43 = "'",
+        peg$c44 = { type: "literal", value: "'", description: "\"'\"" },
+        peg$c45 = function(chars) { return chars.join(""); },
+        peg$c46 = "\"",
+        peg$c47 = { type: "literal", value: "\"", description: "\"\\\"\"" },
+        peg$c48 = { type: "other", description: "key" },
+        peg$c49 = /^[a-zA-Z0-9_\-]/,
+        peg$c50 = { type: "class", value: "[a-zA-Z0-9_-]", description: "[a-zA-Z0-9_-]" },
+        peg$c51 = function(chars) { return chars.join("").toLowerCase(); },
+        peg$c52 = { type: "other", description: "double-quoted string character" },
+        peg$c53 = /^[ -!#-[\]-\u10FFFF]/,
+        peg$c54 = { type: "class", value: "[\\x20-\\x21\\x23-\\x5B\\x5D-\\u10FFFF]", description: "[\\x20-\\x21\\x23-\\x5B\\x5D-\\u10FFFF]" },
+        peg$c55 = { type: "other", description: "single-quoted string character" },
+        peg$c56 = /^[ -&(-[\]-\u10FFFF]/,
+        peg$c57 = { type: "class", value: "[\\x20-\\x26\\x28-\\x5B\\x5D-\\u10FFFF]", description: "[\\x20-\\x26\\x28-\\x5B\\x5D-\\u10FFFF]" },
+        peg$c58 = { type: "other", description: "escaped character sequence" },
+        peg$c59 = "\\",
+        peg$c60 = { type: "literal", value: "\\", description: "\"\\\\\"" },
+        peg$c61 = "/",
+        peg$c62 = { type: "literal", value: "/", description: "\"/\"" },
+        peg$c63 = "b",
+        peg$c64 = { type: "literal", value: "b", description: "\"b\"" },
+        peg$c65 = function() { return "\b"; },
+        peg$c66 = "f",
+        peg$c67 = { type: "literal", value: "f", description: "\"f\"" },
+        peg$c68 = function() { return "\f"; },
+        peg$c69 = "n",
+        peg$c70 = { type: "literal", value: "n", description: "\"n\"" },
+        peg$c71 = function() { return "\n"; },
+        peg$c72 = "r",
+        peg$c73 = { type: "literal", value: "r", description: "\"r\"" },
+        peg$c74 = function() { return "\r"; },
+        peg$c75 = "t",
+        peg$c76 = { type: "literal", value: "t", description: "\"t\"" },
+        peg$c77 = function() { return "\t"; },
+        peg$c78 = "u",
+        peg$c79 = { type: "literal", value: "u", description: "\"u\"" },
+        peg$c80 = function(digits) {
+                return String.fromCharCode(parseInt(digits, 16));
+              },
+        peg$c81 = function(sequence) {
+            return sequence;
+          },
+        peg$c82 = /^[0-9]/,
+        peg$c83 = { type: "class", value: "[0-9]", description: "[0-9]" },
+        peg$c84 = /^[0-9a-f]/i,
+        peg$c85 = { type: "class", value: "[0-9a-f]i", description: "[0-9a-f]i" },
+        peg$c86 = /^[\n\r\u2028\u2029]/,
+        peg$c87 = { type: "class", value: "[\\n\\r\\u2028\\u2029]", description: "[\\n\\r\\u2028\\u2029]" },
+
+        peg$currPos          = 0,
+        peg$savedPos         = 0,
+        peg$posDetailsCache  = [{ line: 1, column: 1, seenCR: false }],
+        peg$maxFailPos       = 0,
+        peg$maxFailExpected  = [],
+        peg$silentFails      = 0,
+
+        peg$result;
+
+    if ("startRule" in options) {
+      if (!(options.startRule in peg$startRuleFunctions)) {
+        throw new Error("Can't start parsing from rule \"" + options.startRule + "\".");
+      }
+
+      peg$startRuleFunction = peg$startRuleFunctions[options.startRule];
+    }
+
+    function text() {
+      return input.substring(peg$savedPos, peg$currPos);
+    }
+
+    function location() {
+      return peg$computeLocation(peg$savedPos, peg$currPos);
+    }
+
+    function expected(description) {
+      throw peg$buildException(
+        null,
+        [{ type: "other", description: description }],
+        input.substring(peg$savedPos, peg$currPos),
+        peg$computeLocation(peg$savedPos, peg$currPos)
+      );
+    }
+
+    function error(message) {
+      throw peg$buildException(
+        message,
+        null,
+        input.substring(peg$savedPos, peg$currPos),
+        peg$computeLocation(peg$savedPos, peg$currPos)
+      );
+    }
+
+    function peg$computePosDetails(pos) {
+      var details = peg$posDetailsCache[pos],
+          p, ch;
+
+      if (details) {
+        return details;
+      } else {
+        p = pos - 1;
+        while (!peg$posDetailsCache[p]) {
+          p--;
+        }
+
+        details = peg$posDetailsCache[p];
+        details = {
+          line:   details.line,
+          column: details.column,
+          seenCR: details.seenCR
+        };
+
+        while (p < pos) {
+          ch = input.charAt(p);
+          if (ch === "\n") {
+            if (!details.seenCR) { details.line++; }
+            details.column = 1;
+            details.seenCR = false;
+          } else if (ch === "\r" || ch === "\u2028" || ch === "\u2029") {
+            details.line++;
+            details.column = 1;
+            details.seenCR = true;
+          } else {
+            details.column++;
+            details.seenCR = false;
+          }
+
+          p++;
+        }
+
+        peg$posDetailsCache[pos] = details;
+        return details;
+      }
+    }
+
+    function peg$computeLocation(startPos, endPos) {
+      var startPosDetails = peg$computePosDetails(startPos),
+          endPosDetails   = peg$computePosDetails(endPos);
+
+      return {
+        start: {
+          offset: startPos,
+          line:   startPosDetails.line,
+          column: startPosDetails.column
+        },
+        end: {
+          offset: endPos,
+          line:   endPosDetails.line,
+          column: endPosDetails.column
+        }
+      };
+    }
+
+    function peg$fail(expected) {
+      if (peg$currPos < peg$maxFailPos) { return; }
+
+      if (peg$currPos > peg$maxFailPos) {
+        peg$maxFailPos = peg$currPos;
+        peg$maxFailExpected = [];
+      }
+
+      peg$maxFailExpected.push(expected);
+    }
+
+    function peg$buildException(message, expected, found, location) {
+      function cleanupExpected(expected) {
+        var i = 1;
+
+        expected.sort(function(a, b) {
+          if (a.description < b.description) {
+            return -1;
+          } else if (a.description > b.description) {
+            return 1;
+          } else {
+            return 0;
+          }
+        });
+
+        while (i < expected.length) {
+          if (expected[i - 1] === expected[i]) {
+            expected.splice(i, 1);
+          } else {
+            i++;
+          }
+        }
+      }
+
+      function buildMessage(expected, found) {
+        function stringEscape(s) {
+          function hex(ch) { return ch.charCodeAt(0).toString(16).toUpperCase(); }
+
+          return s
+            .replace(/\\/g,   '\\\\')
+            .replace(/"/g,    '\\"')
+            .replace(/\x08/g, '\\b')
+            .replace(/\t/g,   '\\t')
+            .replace(/\n/g,   '\\n')
+            .replace(/\f/g,   '\\f')
+            .replace(/\r/g,   '\\r')
+            .replace(/[\x00-\x07\x0B\x0E\x0F]/g, function(ch) { return '\\x0' + hex(ch); })
+            .replace(/[\x10-\x1F\x80-\xFF]/g,    function(ch) { return '\\x'  + hex(ch); })
+            .replace(/[\u0100-\u0FFF]/g,         function(ch) { return '\\u0' + hex(ch); })
+            .replace(/[\u1000-\uFFFF]/g,         function(ch) { return '\\u'  + hex(ch); });
+        }
+
+        var expectedDescs = new Array(expected.length),
+            expectedDesc, foundDesc, i;
+
+        for (i = 0; i < expected.length; i++) {
+          expectedDescs[i] = expected[i].description;
+        }
+
+        expectedDesc = expected.length > 1
+          ? expectedDescs.slice(0, -1).join(", ")
+              + " or "
+              + expectedDescs[expected.length - 1]
+          : expectedDescs[0];
+
+        foundDesc = found ? "\"" + stringEscape(found) + "\"" : "end of input";
+
+        return "Expected " + expectedDesc + " but " + foundDesc + " found.";
+      }
+
+      if (expected !== null) {
+        cleanupExpected(expected);
+      }
+
+      return new peg$SyntaxError(
+        message !== null ? message : buildMessage(expected, found),
+        expected,
+        found,
+        location
+      );
+    }
+
+    function peg$parseProto_text() {
+      var s0, s1, s2, s3;
+
+      s0 = peg$currPos;
+      s1 = peg$parsewsc();
+      if (s1 !== peg$FAILED) {
+        s2 = peg$parsedoc();
+        if (s2 !== peg$FAILED) {
+          s3 = peg$parsewsc();
+          if (s3 !== peg$FAILED) {
+            peg$savedPos = s0;
+            s1 = peg$c0(s2);
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsews() {
+      var s0, s1;
+
+      peg$silentFails++;
+      s0 = [];
+      if (peg$c2.test(input.charAt(peg$currPos))) {
+        s1 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c3); }
+      }
+      while (s1 !== peg$FAILED) {
+        s0.push(s1);
+        if (peg$c2.test(input.charAt(peg$currPos))) {
+          s1 = input.charAt(peg$currPos);
+          peg$currPos++;
+        } else {
+          s1 = peg$FAILED;
+          if (peg$silentFails === 0) { peg$fail(peg$c3); }
+        }
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c1); }
+      }
+
+      return s0;
+    }
+
+    function peg$parsewsc() {
+      var s0, s1, s2, s3;
+
+      peg$silentFails++;
+      s0 = peg$currPos;
+      s1 = peg$parsews();
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$parsecomment();
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$parsecomment();
+        }
+        if (s2 !== peg$FAILED) {
+          s3 = peg$parsews();
+          if (s3 !== peg$FAILED) {
+            s1 = [s1, s2, s3];
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c4); }
+      }
+
+      return s0;
+    }
+
+    function peg$parsedoc() {
+      var s0, s1, s2, s3, s4, s5;
+
+      s0 = peg$currPos;
+      s1 = peg$parsevalue();
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$currPos;
+        s4 = peg$parsewsc();
+        if (s4 !== peg$FAILED) {
+          s5 = peg$parsevalue();
+          if (s5 !== peg$FAILED) {
+            peg$savedPos = s3;
+            s4 = peg$c5(s1, s5);
+            s3 = s4;
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s3;
+          s3 = peg$FAILED;
+        }
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$currPos;
+          s4 = peg$parsewsc();
+          if (s4 !== peg$FAILED) {
+            s5 = peg$parsevalue();
+            if (s5 !== peg$FAILED) {
+              peg$savedPos = s3;
+              s4 = peg$c5(s1, s5);
+              s3 = s4;
+            } else {
+              peg$currPos = s3;
+              s3 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        }
+        if (s2 !== peg$FAILED) {
+          s1 = [s1, s2];
+          s0 = s1;
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsevalue() {
+      var s0;
+
+      s0 = peg$parseobject();
+      if (s0 === peg$FAILED) {
+        s0 = peg$parsepairs();
+      }
+
+      return s0;
+    }
+
+    function peg$parsecomment() {
+      var s0, s1, s2, s3, s4, s5, s6;
+
+      peg$silentFails++;
+      s0 = peg$currPos;
+      s1 = peg$parsews();
+      if (s1 !== peg$FAILED) {
+        if (input.charCodeAt(peg$currPos) === 35) {
+          s2 = peg$c7;
+          peg$currPos++;
+        } else {
+          s2 = peg$FAILED;
+          if (peg$silentFails === 0) { peg$fail(peg$c8); }
+        }
+        if (s2 !== peg$FAILED) {
+          s3 = [];
+          s4 = peg$currPos;
+          s5 = peg$currPos;
+          peg$silentFails++;
+          s6 = peg$parseLineTerminator();
+          peg$silentFails--;
+          if (s6 === peg$FAILED) {
+            s5 = void 0;
+          } else {
+            peg$currPos = s5;
+            s5 = peg$FAILED;
+          }
+          if (s5 !== peg$FAILED) {
+            if (input.length > peg$currPos) {
+              s6 = input.charAt(peg$currPos);
+              peg$currPos++;
+            } else {
+              s6 = peg$FAILED;
+              if (peg$silentFails === 0) { peg$fail(peg$c9); }
+            }
+            if (s6 !== peg$FAILED) {
+              s5 = [s5, s6];
+              s4 = s5;
+            } else {
+              peg$currPos = s4;
+              s4 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s4;
+            s4 = peg$FAILED;
+          }
+          while (s4 !== peg$FAILED) {
+            s3.push(s4);
+            s4 = peg$currPos;
+            s5 = peg$currPos;
+            peg$silentFails++;
+            s6 = peg$parseLineTerminator();
+            peg$silentFails--;
+            if (s6 === peg$FAILED) {
+              s5 = void 0;
+            } else {
+              peg$currPos = s5;
+              s5 = peg$FAILED;
+            }
+            if (s5 !== peg$FAILED) {
+              if (input.length > peg$currPos) {
+                s6 = input.charAt(peg$currPos);
+                peg$currPos++;
+              } else {
+                s6 = peg$FAILED;
+                if (peg$silentFails === 0) { peg$fail(peg$c9); }
+              }
+              if (s6 !== peg$FAILED) {
+                s5 = [s5, s6];
+                s4 = s5;
+              } else {
+                peg$currPos = s4;
+                s4 = peg$FAILED;
+              }
+            } else {
+              peg$currPos = s4;
+              s4 = peg$FAILED;
+            }
+          }
+          if (s3 !== peg$FAILED) {
+            s1 = [s1, s2, s3];
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c6); }
+      }
+
+      return s0;
+    }
+
+    function peg$parsepairs() {
+      var s0, s1, s2, s3, s4, s5;
+
+      s0 = peg$currPos;
+      s1 = peg$parsepair();
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$currPos;
+        s4 = peg$parsewsc();
+        if (s4 !== peg$FAILED) {
+          s5 = peg$parsepair();
+          if (s5 !== peg$FAILED) {
+            peg$savedPos = s3;
+            s4 = peg$c10(s1, s5);
+            s3 = s4;
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s3;
+          s3 = peg$FAILED;
+        }
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$currPos;
+          s4 = peg$parsewsc();
+          if (s4 !== peg$FAILED) {
+            s5 = peg$parsepair();
+            if (s5 !== peg$FAILED) {
+              peg$savedPos = s3;
+              s4 = peg$c10(s1, s5);
+              s3 = s4;
+            } else {
+              peg$currPos = s3;
+              s3 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        }
+        if (s2 !== peg$FAILED) {
+          peg$savedPos = s0;
+          s1 = peg$c11(s1, s2);
+          s0 = s1;
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsepair() {
+      var s0, s1, s2, s3, s4, s5;
+
+      s0 = peg$currPos;
+      s1 = peg$parsekey();
+      if (s1 !== peg$FAILED) {
+        s2 = peg$parsews();
+        if (s2 !== peg$FAILED) {
+          if (input.charCodeAt(peg$currPos) === 58) {
+            s3 = peg$c12;
+            peg$currPos++;
+          } else {
+            s3 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c13); }
+          }
+          if (s3 !== peg$FAILED) {
+            s4 = peg$parsews();
+            if (s4 !== peg$FAILED) {
+              s5 = peg$parsestring();
+              if (s5 === peg$FAILED) {
+                s5 = peg$parsenumber();
+                if (s5 === peg$FAILED) {
+                  s5 = peg$parsekey();
+                  if (s5 === peg$FAILED) {
+                    s5 = peg$parselist();
+                  }
+                }
+              }
+              if (s5 !== peg$FAILED) {
+                peg$savedPos = s0;
+                s1 = peg$c14(s1, s5);
+                s0 = s1;
+              } else {
+                peg$currPos = s0;
+                s0 = peg$FAILED;
+              }
+            } else {
+              peg$currPos = s0;
+              s0 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parselist() {
+      var s0, s1, s2, s3, s4, s5, s6, s7;
+
+      s0 = peg$currPos;
+      if (input.charCodeAt(peg$currPos) === 91) {
+        s1 = peg$c15;
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c16); }
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$currPos;
+        s4 = peg$parsews();
+        if (s4 !== peg$FAILED) {
+          s5 = peg$parsestring();
+          if (s5 === peg$FAILED) {
+            s5 = peg$parsenumber();
+          }
+          if (s5 !== peg$FAILED) {
+            s6 = peg$parsews();
+            if (s6 !== peg$FAILED) {
+              if (input.charCodeAt(peg$currPos) === 44) {
+                s7 = peg$c17;
+                peg$currPos++;
+              } else {
+                s7 = peg$FAILED;
+                if (peg$silentFails === 0) { peg$fail(peg$c18); }
+              }
+              if (s7 === peg$FAILED) {
+                s7 = null;
+              }
+              if (s7 !== peg$FAILED) {
+                peg$savedPos = s3;
+                s4 = peg$c19(s5);
+                s3 = s4;
+              } else {
+                peg$currPos = s3;
+                s3 = peg$FAILED;
+              }
+            } else {
+              peg$currPos = s3;
+              s3 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s3;
+          s3 = peg$FAILED;
+        }
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$currPos;
+          s4 = peg$parsews();
+          if (s4 !== peg$FAILED) {
+            s5 = peg$parsestring();
+            if (s5 === peg$FAILED) {
+              s5 = peg$parsenumber();
+            }
+            if (s5 !== peg$FAILED) {
+              s6 = peg$parsews();
+              if (s6 !== peg$FAILED) {
+                if (input.charCodeAt(peg$currPos) === 44) {
+                  s7 = peg$c17;
+                  peg$currPos++;
+                } else {
+                  s7 = peg$FAILED;
+                  if (peg$silentFails === 0) { peg$fail(peg$c18); }
+                }
+                if (s7 === peg$FAILED) {
+                  s7 = null;
+                }
+                if (s7 !== peg$FAILED) {
+                  peg$savedPos = s3;
+                  s4 = peg$c19(s5);
+                  s3 = s4;
+                } else {
+                  peg$currPos = s3;
+                  s3 = peg$FAILED;
+                }
+              } else {
+                peg$currPos = s3;
+                s3 = peg$FAILED;
+              }
+            } else {
+              peg$currPos = s3;
+              s3 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s3;
+            s3 = peg$FAILED;
+          }
+        }
+        if (s2 !== peg$FAILED) {
+          s3 = peg$parsews();
+          if (s3 !== peg$FAILED) {
+            if (input.charCodeAt(peg$currPos) === 93) {
+              s4 = peg$c20;
+              peg$currPos++;
+            } else {
+              s4 = peg$FAILED;
+              if (peg$silentFails === 0) { peg$fail(peg$c21); }
+            }
+            if (s4 !== peg$FAILED) {
+              peg$savedPos = s0;
+              s1 = peg$c22(s2);
+              s0 = s1;
+            } else {
+              peg$currPos = s0;
+              s0 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parseobject() {
+      var s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
+
+      s0 = peg$currPos;
+      s1 = peg$parsekey();
+      if (s1 !== peg$FAILED) {
+        s2 = peg$parsews();
+        if (s2 !== peg$FAILED) {
+          if (input.charCodeAt(peg$currPos) === 58) {
+            s3 = peg$c12;
+            peg$currPos++;
+          } else {
+            s3 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c13); }
+          }
+          if (s3 === peg$FAILED) {
+            s3 = null;
+          }
+          if (s3 !== peg$FAILED) {
+            s4 = peg$parsews();
+            if (s4 !== peg$FAILED) {
+              if (input.charCodeAt(peg$currPos) === 123) {
+                s5 = peg$c23;
+                peg$currPos++;
+              } else {
+                s5 = peg$FAILED;
+                if (peg$silentFails === 0) { peg$fail(peg$c24); }
+              }
+              if (s5 !== peg$FAILED) {
+                s6 = peg$parsewsc();
+                if (s6 !== peg$FAILED) {
+                  s7 = peg$parsemember();
+                  if (s7 === peg$FAILED) {
+                    s7 = null;
+                  }
+                  if (s7 !== peg$FAILED) {
+                    s8 = [];
+                    s9 = peg$currPos;
+                    s10 = peg$parsewsc();
+                    if (s10 !== peg$FAILED) {
+                      s11 = peg$parsemember();
+                      if (s11 !== peg$FAILED) {
+                        peg$savedPos = s9;
+                        s10 = peg$c25(s1, s7, s11);
+                        s9 = s10;
+                      } else {
+                        peg$currPos = s9;
+                        s9 = peg$FAILED;
+                      }
+                    } else {
+                      peg$currPos = s9;
+                      s9 = peg$FAILED;
+                    }
+                    while (s9 !== peg$FAILED) {
+                      s8.push(s9);
+                      s9 = peg$currPos;
+                      s10 = peg$parsewsc();
+                      if (s10 !== peg$FAILED) {
+                        s11 = peg$parsemember();
+                        if (s11 !== peg$FAILED) {
+                          peg$savedPos = s9;
+                          s10 = peg$c25(s1, s7, s11);
+                          s9 = s10;
+                        } else {
+                          peg$currPos = s9;
+                          s9 = peg$FAILED;
+                        }
+                      } else {
+                        peg$currPos = s9;
+                        s9 = peg$FAILED;
+                      }
+                    }
+                    if (s8 !== peg$FAILED) {
+                      s9 = peg$parsewsc();
+                      if (s9 !== peg$FAILED) {
+                        if (input.charCodeAt(peg$currPos) === 125) {
+                          s10 = peg$c26;
+                          peg$currPos++;
+                        } else {
+                          s10 = peg$FAILED;
+                          if (peg$silentFails === 0) { peg$fail(peg$c27); }
+                        }
+                        if (s10 !== peg$FAILED) {
+                          s11 = peg$parsewsc();
+                          if (s11 !== peg$FAILED) {
+                            peg$savedPos = s0;
+                            s1 = peg$c28(s1, s7, s8);
+                            s0 = s1;
+                          } else {
+                            peg$currPos = s0;
+                            s0 = peg$FAILED;
+                          }
+                        } else {
+                          peg$currPos = s0;
+                          s0 = peg$FAILED;
+                        }
+                      } else {
+                        peg$currPos = s0;
+                        s0 = peg$FAILED;
+                      }
+                    } else {
+                      peg$currPos = s0;
+                      s0 = peg$FAILED;
+                    }
+                  } else {
+                    peg$currPos = s0;
+                    s0 = peg$FAILED;
+                  }
+                } else {
+                  peg$currPos = s0;
+                  s0 = peg$FAILED;
+                }
+              } else {
+                peg$currPos = s0;
+                s0 = peg$FAILED;
+              }
+            } else {
+              peg$currPos = s0;
+              s0 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsemember() {
+      var s0;
+
+      s0 = peg$parsecomment();
+      if (s0 === peg$FAILED) {
+        s0 = peg$parsepairs();
+        if (s0 === peg$FAILED) {
+          s0 = peg$parseobject();
+        }
+      }
+
+      return s0;
+    }
+
+    function peg$parsenumber() {
+      var s0, s1, s2, s3, s4;
+
+      peg$silentFails++;
+      s0 = peg$currPos;
+      s1 = peg$parseminus();
+      if (s1 === peg$FAILED) {
+        s1 = null;
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = peg$parseint();
+        if (s2 !== peg$FAILED) {
+          s3 = peg$parsefrac();
+          if (s3 === peg$FAILED) {
+            s3 = null;
+          }
+          if (s3 !== peg$FAILED) {
+            s4 = peg$parseexp();
+            if (s4 === peg$FAILED) {
+              s4 = null;
+            }
+            if (s4 !== peg$FAILED) {
+              peg$savedPos = s0;
+              s1 = peg$c30();
+              s0 = s1;
+            } else {
+              peg$currPos = s0;
+              s0 = peg$FAILED;
+            }
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c29); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseexp() {
+      var s0, s1, s2, s3, s4;
+
+      s0 = peg$currPos;
+      if (peg$c31.test(input.charAt(peg$currPos))) {
+        s1 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c32); }
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = peg$parseminus();
+        if (s2 === peg$FAILED) {
+          s2 = peg$parseplus();
+        }
+        if (s2 === peg$FAILED) {
+          s2 = null;
+        }
+        if (s2 !== peg$FAILED) {
+          s3 = [];
+          s4 = peg$parseDigit();
+          if (s4 !== peg$FAILED) {
+            while (s4 !== peg$FAILED) {
+              s3.push(s4);
+              s4 = peg$parseDigit();
+            }
+          } else {
+            s3 = peg$FAILED;
+          }
+          if (s3 !== peg$FAILED) {
+            s1 = [s1, s2, s3];
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsefrac() {
+      var s0, s1, s2, s3;
+
+      s0 = peg$currPos;
+      if (input.charCodeAt(peg$currPos) === 46) {
+        s1 = peg$c33;
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c34); }
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$parseDigit();
+        if (s3 !== peg$FAILED) {
+          while (s3 !== peg$FAILED) {
+            s2.push(s3);
+            s3 = peg$parseDigit();
+          }
+        } else {
+          s2 = peg$FAILED;
+        }
+        if (s2 !== peg$FAILED) {
+          s1 = [s1, s2];
+          s0 = s1;
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parseint() {
+      var s0, s1, s2, s3;
+
+      if (input.charCodeAt(peg$currPos) === 48) {
+        s0 = peg$c35;
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c36); }
+      }
+      if (s0 === peg$FAILED) {
+        s0 = peg$currPos;
+        if (peg$c37.test(input.charAt(peg$currPos))) {
+          s1 = input.charAt(peg$currPos);
+          peg$currPos++;
+        } else {
+          s1 = peg$FAILED;
+          if (peg$silentFails === 0) { peg$fail(peg$c38); }
+        }
+        if (s1 !== peg$FAILED) {
+          s2 = [];
+          s3 = peg$parseDigit();
+          while (s3 !== peg$FAILED) {
+            s2.push(s3);
+            s3 = peg$parseDigit();
+          }
+          if (s2 !== peg$FAILED) {
+            s1 = [s1, s2];
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      }
+
+      return s0;
+    }
+
+    function peg$parseminus() {
+      var s0;
+
+      if (input.charCodeAt(peg$currPos) === 45) {
+        s0 = peg$c39;
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c40); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseplus() {
+      var s0;
+
+      if (input.charCodeAt(peg$currPos) === 43) {
+        s0 = peg$c41;
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c42); }
+      }
+
+      return s0;
+    }
+
+    function peg$parsestring() {
+      var s0;
+
+      s0 = peg$parsesstring();
+      if (s0 === peg$FAILED) {
+        s0 = peg$parsedstring();
+      }
+
+      return s0;
+    }
+
+    function peg$parsesstring() {
+      var s0, s1, s2, s3;
+
+      s0 = peg$currPos;
+      if (input.charCodeAt(peg$currPos) === 39) {
+        s1 = peg$c43;
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c44); }
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$parseschar();
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$parseschar();
+        }
+        if (s2 !== peg$FAILED) {
+          if (input.charCodeAt(peg$currPos) === 39) {
+            s3 = peg$c43;
+            peg$currPos++;
+          } else {
+            s3 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c44); }
+          }
+          if (s3 !== peg$FAILED) {
+            peg$savedPos = s0;
+            s1 = peg$c45(s2);
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsedstring() {
+      var s0, s1, s2, s3;
+
+      s0 = peg$currPos;
+      if (input.charCodeAt(peg$currPos) === 34) {
+        s1 = peg$c46;
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c47); }
+      }
+      if (s1 !== peg$FAILED) {
+        s2 = [];
+        s3 = peg$parsedchar();
+        while (s3 !== peg$FAILED) {
+          s2.push(s3);
+          s3 = peg$parsedchar();
+        }
+        if (s2 !== peg$FAILED) {
+          if (input.charCodeAt(peg$currPos) === 34) {
+            s3 = peg$c46;
+            peg$currPos++;
+          } else {
+            s3 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c47); }
+          }
+          if (s3 !== peg$FAILED) {
+            peg$savedPos = s0;
+            s1 = peg$c45(s2);
+            s0 = s1;
+          } else {
+            peg$currPos = s0;
+            s0 = peg$FAILED;
+          }
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+
+      return s0;
+    }
+
+    function peg$parsekey() {
+      var s0, s1, s2;
+
+      peg$silentFails++;
+      s0 = peg$currPos;
+      s1 = [];
+      if (peg$c49.test(input.charAt(peg$currPos))) {
+        s2 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s2 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c50); }
+      }
+      if (s2 !== peg$FAILED) {
+        while (s2 !== peg$FAILED) {
+          s1.push(s2);
+          if (peg$c49.test(input.charAt(peg$currPos))) {
+            s2 = input.charAt(peg$currPos);
+            peg$currPos++;
+          } else {
+            s2 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c50); }
+          }
+        }
+      } else {
+        s1 = peg$FAILED;
+      }
+      if (s1 !== peg$FAILED) {
+        peg$savedPos = s0;
+        s1 = peg$c51(s1);
+      }
+      s0 = s1;
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c48); }
+      }
+
+      return s0;
+    }
+
+    function peg$parsedchar() {
+      var s0, s1;
+
+      peg$silentFails++;
+      if (peg$c53.test(input.charAt(peg$currPos))) {
+        s0 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c54); }
+      }
+      if (s0 === peg$FAILED) {
+        s0 = peg$parseechar();
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c52); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseschar() {
+      var s0, s1;
+
+      peg$silentFails++;
+      if (peg$c56.test(input.charAt(peg$currPos))) {
+        s0 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c57); }
+      }
+      if (s0 === peg$FAILED) {
+        s0 = peg$parseechar();
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c55); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseechar() {
+      var s0, s1, s2, s3, s4, s5, s6, s7, s8, s9;
+
+      peg$silentFails++;
+      s0 = peg$currPos;
+      if (input.charCodeAt(peg$currPos) === 92) {
+        s1 = peg$c59;
+        peg$currPos++;
+      } else {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c60); }
+      }
+      if (s1 !== peg$FAILED) {
+        if (input.charCodeAt(peg$currPos) === 34) {
+          s2 = peg$c46;
+          peg$currPos++;
+        } else {
+          s2 = peg$FAILED;
+          if (peg$silentFails === 0) { peg$fail(peg$c47); }
+        }
+        if (s2 === peg$FAILED) {
+          if (input.charCodeAt(peg$currPos) === 39) {
+            s2 = peg$c43;
+            peg$currPos++;
+          } else {
+            s2 = peg$FAILED;
+            if (peg$silentFails === 0) { peg$fail(peg$c44); }
+          }
+          if (s2 === peg$FAILED) {
+            if (input.charCodeAt(peg$currPos) === 92) {
+              s2 = peg$c59;
+              peg$currPos++;
+            } else {
+              s2 = peg$FAILED;
+              if (peg$silentFails === 0) { peg$fail(peg$c60); }
+            }
+            if (s2 === peg$FAILED) {
+              if (input.charCodeAt(peg$currPos) === 47) {
+                s2 = peg$c61;
+                peg$currPos++;
+              } else {
+                s2 = peg$FAILED;
+                if (peg$silentFails === 0) { peg$fail(peg$c62); }
+              }
+              if (s2 === peg$FAILED) {
+                s2 = peg$currPos;
+                if (input.charCodeAt(peg$currPos) === 98) {
+                  s3 = peg$c63;
+                  peg$currPos++;
+                } else {
+                  s3 = peg$FAILED;
+                  if (peg$silentFails === 0) { peg$fail(peg$c64); }
+                }
+                if (s3 !== peg$FAILED) {
+                  peg$savedPos = s2;
+                  s3 = peg$c65();
+                }
+                s2 = s3;
+                if (s2 === peg$FAILED) {
+                  s2 = peg$currPos;
+                  if (input.charCodeAt(peg$currPos) === 102) {
+                    s3 = peg$c66;
+                    peg$currPos++;
+                  } else {
+                    s3 = peg$FAILED;
+                    if (peg$silentFails === 0) { peg$fail(peg$c67); }
+                  }
+                  if (s3 !== peg$FAILED) {
+                    peg$savedPos = s2;
+                    s3 = peg$c68();
+                  }
+                  s2 = s3;
+                  if (s2 === peg$FAILED) {
+                    s2 = peg$currPos;
+                    if (input.charCodeAt(peg$currPos) === 110) {
+                      s3 = peg$c69;
+                      peg$currPos++;
+                    } else {
+                      s3 = peg$FAILED;
+                      if (peg$silentFails === 0) { peg$fail(peg$c70); }
+                    }
+                    if (s3 !== peg$FAILED) {
+                      peg$savedPos = s2;
+                      s3 = peg$c71();
+                    }
+                    s2 = s3;
+                    if (s2 === peg$FAILED) {
+                      s2 = peg$currPos;
+                      if (input.charCodeAt(peg$currPos) === 114) {
+                        s3 = peg$c72;
+                        peg$currPos++;
+                      } else {
+                        s3 = peg$FAILED;
+                        if (peg$silentFails === 0) { peg$fail(peg$c73); }
+                      }
+                      if (s3 !== peg$FAILED) {
+                        peg$savedPos = s2;
+                        s3 = peg$c74();
+                      }
+                      s2 = s3;
+                      if (s2 === peg$FAILED) {
+                        s2 = peg$currPos;
+                        if (input.charCodeAt(peg$currPos) === 116) {
+                          s3 = peg$c75;
+                          peg$currPos++;
+                        } else {
+                          s3 = peg$FAILED;
+                          if (peg$silentFails === 0) { peg$fail(peg$c76); }
+                        }
+                        if (s3 !== peg$FAILED) {
+                          peg$savedPos = s2;
+                          s3 = peg$c77();
+                        }
+                        s2 = s3;
+                        if (s2 === peg$FAILED) {
+                          s2 = peg$currPos;
+                          if (input.charCodeAt(peg$currPos) === 117) {
+                            s3 = peg$c78;
+                            peg$currPos++;
+                          } else {
+                            s3 = peg$FAILED;
+                            if (peg$silentFails === 0) { peg$fail(peg$c79); }
+                          }
+                          if (s3 !== peg$FAILED) {
+                            s4 = peg$currPos;
+                            s5 = peg$currPos;
+                            s6 = peg$parseHexDigit();
+                            if (s6 !== peg$FAILED) {
+                              s7 = peg$parseHexDigit();
+                              if (s7 !== peg$FAILED) {
+                                s8 = peg$parseHexDigit();
+                                if (s8 !== peg$FAILED) {
+                                  s9 = peg$parseHexDigit();
+                                  if (s9 !== peg$FAILED) {
+                                    s6 = [s6, s7, s8, s9];
+                                    s5 = s6;
+                                  } else {
+                                    peg$currPos = s5;
+                                    s5 = peg$FAILED;
+                                  }
+                                } else {
+                                  peg$currPos = s5;
+                                  s5 = peg$FAILED;
+                                }
+                              } else {
+                                peg$currPos = s5;
+                                s5 = peg$FAILED;
+                              }
+                            } else {
+                              peg$currPos = s5;
+                              s5 = peg$FAILED;
+                            }
+                            if (s5 !== peg$FAILED) {
+                              s4 = input.substring(s4, peg$currPos);
+                            } else {
+                              s4 = s5;
+                            }
+                            if (s4 !== peg$FAILED) {
+                              peg$savedPos = s2;
+                              s3 = peg$c80(s4);
+                              s2 = s3;
+                            } else {
+                              peg$currPos = s2;
+                              s2 = peg$FAILED;
+                            }
+                          } else {
+                            peg$currPos = s2;
+                            s2 = peg$FAILED;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (s2 !== peg$FAILED) {
+          peg$savedPos = s0;
+          s1 = peg$c81(s2);
+          s0 = s1;
+        } else {
+          peg$currPos = s0;
+          s0 = peg$FAILED;
+        }
+      } else {
+        peg$currPos = s0;
+        s0 = peg$FAILED;
+      }
+      peg$silentFails--;
+      if (s0 === peg$FAILED) {
+        s1 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c58); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseDigit() {
+      var s0;
+
+      if (peg$c82.test(input.charAt(peg$currPos))) {
+        s0 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c83); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseHexDigit() {
+      var s0;
+
+      if (peg$c84.test(input.charAt(peg$currPos))) {
+        s0 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c85); }
+      }
+
+      return s0;
+    }
+
+    function peg$parseLineTerminator() {
+      var s0;
+
+      if (peg$c86.test(input.charAt(peg$currPos))) {
+        s0 = input.charAt(peg$currPos);
+        peg$currPos++;
+      } else {
+        s0 = peg$FAILED;
+        if (peg$silentFails === 0) { peg$fail(peg$c87); }
+      }
+
+      return s0;
+    }
+
+    peg$result = peg$startRuleFunction();
+
+    if (peg$result !== peg$FAILED && peg$currPos === input.length) {
+      return peg$result;
+    } else {
+      if (peg$result !== peg$FAILED && peg$currPos < input.length) {
+        peg$fail({ type: "end", description: "end of input" });
+      }
+
+      throw peg$buildException(
+        null,
+        peg$maxFailExpected,
+        peg$maxFailPos < input.length ? input.charAt(peg$maxFailPos) : null,
+        peg$maxFailPos < input.length
+          ? peg$computeLocation(peg$maxFailPos, peg$maxFailPos + 1)
+          : peg$computeLocation(peg$maxFailPos, peg$maxFailPos)
+      );
+    }
+  }
+
+  return {
+    SyntaxError: peg$SyntaxError,
+    parse:       peg$parse
+  };
+})();
+
+},{}],5:[function(require,module,exports){
+var Editor;
+
+module.exports = Editor = class Editor {
+  constructor(loaderFunc, loader) {
+    var $editorBox, editorWidthPercentage, preset, ref;
+    this.loaderFunc = loaderFunc;
+    editorWidthPercentage = 30;
+    $editorBox = $($.parseHTML('<div class="column"></div>'));
+    $editorBox.width(editorWidthPercentage + '%');
+    $('#net-column').width((100 - editorWidthPercentage) + '%');
+    $('#master-container').prepend($editorBox);
+    preset = (ref = loader.dataLoaded) != null ? ref : '# Enter your network definition here.\n# Use Shift+Enter to update the visualization.';
+    this.editor = CodeMirror($editorBox[0], {
+      value: preset,
+      lineNumbers: true,
+      lineWrapping: true
+    });
+    this.editor.on('keydown', (cm, e) => {
+      return this.onKeyDown(e);
+    });
+  }
+
+  reload(loaderFunc, loader) {
+    var preset, ref;
+    this.loaderFunc = loaderFunc;
+    preset = (ref = loader.dataLoaded) != null ? ref : '# Enter your network definition here.\n# Use Shift+Enter to update the visualization.';
+    return this.editor.setValue(preset);
+  }
+
+  //alert(preset)
+  onKeyDown(e) {
+    if (e.shiftKey && e.keyCode === 13) {
+      // Using onKeyDown lets us prevent the default action,
+      // even if an error is encountered (say, due to parsing).
+      // This would not be possible with keymaps.
+      e.preventDefault();
+      return this.loaderFunc(this.editor.getValue());
+    }
+  }
+
+};
+
+
+},{}],6:[function(require,module,exports){
+var Loader;
+
+module.exports = Loader = class Loader {
+  constructor(parser) {
+    this.fromGist = this.fromGist.bind(this);
+    this.fromURL = this.fromURL.bind(this);
+    this.fromPreset = this.fromPreset.bind(this);
+    this.load = this.load.bind(this);
+    this.parser = parser;
+    // The parser is a unary function that accepts the network source
+    // and outputs a Network instance.
+    this.dataLoaded = null;
+  }
+
+  fromGist(gistID, callback) {
+    var url;
+    // Load the model with the given Gist ID.
+    url = 'https://api.github.com/gists/' + gistID;
+    return $.getJSON(url, (data) => {
+      var fileInfo, fileKey, fileSet, filename, isProto, isSolitaryFile, isSolver;
+      fileSet = data['files'];
+      isSolitaryFile = Object.keys(fileSet).length === 1;
+      for (fileKey in fileSet) {
+        fileInfo = fileSet[fileKey];
+        filename = fileInfo['filename'].toLowerCase();
+        isProto = _.endsWith(filename, '.prototxt');
+        isSolver = _.startsWith(filename, 'solver');
+        if ((isProto && !isSolver) || isSolitaryFile) {
+          this.load(fileInfo['content'], callback);
+          return;
+        }
+      }
+      return console.log('No prototxt found in the given GIST.');
+    });
+  }
+
+  fromURL(url, callback) {
+    // Load the model from the given URL.
+    // This may fail due to same-origin policy.
+    return $.ajax({
+      url: url,
+      success: () => {
+        return this.load(data, callback);
+      }
+    });
+  }
+
+  fromPreset(name, callback) {
+    // Load a preset model. Caffe Only.
+    return $.get('./presets/' + name + '.prototxt', (data) => {
+      return this.load(data, callback);
+    });
+  }
+
+  load(data, callback) {
+    var net;
+    this.dataLoaded = data;
+    net = this.parser.parse(data);
+    if (!_.isUndefined(callback)) {
+      callback(net);
+    }
+    return net;
+  }
+
+};
+
+
+},{}],7:[function(require,module,exports){
+var AppController, CaffeNetwork, Loader, showDocumentation;
+
+AppController = require('./app.coffee');
+
+CaffeNetwork = require('./caffe/caffe.coffee');
+
+Loader = require('./loader.coffee');
+
+window.do_variants_analysis = false;
+
+showDocumentation = function() {
+  return window.location.href = 'quickstart.html';
+};
+
+$(document).ready(function() {
+  var app, loader, makeLoader, router, routes;
+  app = new AppController();
+  // Setup Caffe model loader.
+  // This can be replaced with any arbitrary parser to support
+  // formats other than Caffe.
+  loader = new Loader(CaffeNetwork);
+  // Helper function for wrapping the load calls.
+  makeLoader = function(loadingFunc, loader) {
+    return function(...args) {
+      return app.startLoading(loadingFunc, loader, ...args);
+    };
+  };
+  // Register routes
+  routes = {
+    '/gist/:gistID': makeLoader(loader.fromGist, loader),
+    '/url/(.+)': makeLoader(loader.fromURL, loader),
+    '/preset/:name': makeLoader(loader.fromPreset, loader),
+    '/editor(/?)': () => {
+      return app.showEditor(loader);
+    },
+    '/doc': () => {
+      return showDocumentation();
+    }
+  };
+  router = Router(routes);
+  return router.init('/doc');
+});
+
+
+},{"./app.coffee":2,"./caffe/caffe.coffee":3,"./loader.coffee":6}],8:[function(require,module,exports){
+var Network, Node,
+  indexOf = [].indexOf;
+
+Node = class Node {
+  constructor(name, type1, attribs1 = {}, analysis1 = {}) {
+    this.addChild = this.addChild.bind(this);
+    this.addChildren = this.addChildren.bind(this);
+    this.addParent = this.addParent.bind(this);
+    this.addParents = this.addParents.bind(this);
+    this.detachChild = this.detachChild.bind(this);
+    this.detachChildren = this.detachChildren.bind(this);
+    this.name = name;
+    this.type = type1;
+    this.attribs = attribs1;
+    this.analysis = analysis1;
+    this.parents = [];
+    this.children = [];
+    // Nodes to be coalesced (by the renderer) with the current one.
+    // For instance, this can be used for grouping in-place operations.
+    // Note that this assumes the nodes to be coalesced and the current
+    // node form a simple chain structure.
+    this.coalesce = [];
+  }
+
+  addChild(child) {
+    if (indexOf.call(this.children, child) < 0) {
+      this.children.push(child);
+      if (indexOf.call(child.parents, this) < 0) {
+        return child.parents.push(this);
+      }
+    }
+  }
+
+  addChildren(children) {
+    return _.forEach(children, (c) => {
+      return this.addChild(c);
+    });
+  }
+
+  addParent(parent) {
+    return parent.addChild(this);
+  }
+
+  addParents(parents) {
+    return _.forEach(parents, (p) => {
+      return this.addParent(p);
+    });
+  }
+
+  detachChild(child) {
+    _.pull(this.children, child);
+    return _.pull(child.parents, this);
+  }
+
+  detachChildren() {
+    var children;
+    children = _.clone(this.children);
+    _.forEach(children, (c) => {
+      return this.detachChild(c);
+    });
+    return children;
+  }
+
+};
+
+module.exports = Network = class Network {
+  constructor(name = 'Untitled Network') {
+    this.sortTopologically = this.sortTopologically.bind(this);
+    this.name = name;
+    this.nodes = [];
+  }
+
+  createNode(label, type, attribs, analysis) {
+    var node;
+    node = new Node(label, type, attribs, analysis);
+    this.nodes.push(node);
+    return node;
+  }
+
+  sortTopologically() {
+    var i, j, len, len1, node, sortedNodes, unsortedNodes, visit;
+    sortedNodes = [];
+    unsortedNodes = _.clone(this.nodes);
+    for (i = 0, len = unsortedNodes.length; i < len; i++) {
+      node = unsortedNodes[i];
+      node.sort_ = {
+        temp: false,
+        perm: false
+      };
+    }
+    visit = function(node) {
+      var child, j, len1, ref;
+      if (node.sort_.temp === true) {
+        throw "Graph is not a DAG.";
+      }
+      if (node.sort_.perm) {
+        return;
+      }
+      node.sort_.temp = true;
+      ref = node.children;
+      for (j = 0, len1 = ref.length; j < len1; j++) {
+        child = ref[j];
+        visit(child);
+      }
+      node.sort_.perm = true;
+      node.sort_.temp = false;
+      return sortedNodes.unshift(node);
+    };
+    while (unsortedNodes.length !== 0) {
+      visit(unsortedNodes.pop());
+    }
+    for (j = 0, len1 = sortedNodes.length; j < len1; j++) {
+      node = sortedNodes[j];
+      delete node.sort_;
+    }
+    return sortedNodes;
+  }
+
+};
+
+
+},{}],9:[function(require,module,exports){
+var Renderer, Tableify,
+  hasProp = {}.hasOwnProperty;
+
+Tableify = require('tableify');
+
+require('tablesorter');
+
+module.exports = Renderer = class Renderer {
+  constructor(net, parent1, table) {
+    this.net = net;
+    this.parent = parent1;
+    this.table = table;
+    this.iconify = false;
+    this.layoutDirection = 'tb';
+    this.generateGraph();
+    this.renderTable();
+  }
+
+  setupGraph() {
+    this.graph = new dagreD3.graphlib.Graph();
+    this.graph.setDefaultEdgeLabel((function() {
+      return {};
+    }));
+    return this.graph.setGraph({
+      rankdir: this.layoutDirection,
+      ranksep: 10, // Vertical node separation
+      nodesep: 5, // Horizontal node separation
+      edgesep: 10, // Horizontal edge separation
+      marginx: 0, // Horizontal graph margin
+      marginy: 0 // Vertical graph margin
+    });
+  }
+
+  generateGraph() {
+    var child, j, k, l, lastCoalesed, layers, len, len1, len2, len3, len4, m, node, nodes, o, parent, ref, ref1, ref2, ref3, sink, source, uberParents;
+    this.setupGraph();
+    nodes = this.net.sortTopologically();
+    for (j = 0, len = nodes.length; j < len; j++) {
+      node = nodes[j];
+      if (node.isInGraph) {
+        continue;
+      }
+      layers = [node].concat(node.coalesce);
+      if (layers.length > 1) {
+        // Rewire the node following the last coalesced node to this one
+        lastCoalesed = layers[layers.length - 1];
+        ref = lastCoalesed.children;
+        for (k = 0, len1 = ref.length; k < len1; k++) {
+          child = ref[k];
+          uberParents = _.clone(child.parents);
+          uberParents[uberParents.indexOf(lastCoalesed)] = node;
+          child.parents = uberParents;
+        }
+      }
+      this.insertNode(layers);
+      ref1 = node.parents;
+      for (l = 0, len2 = ref1.length; l < len2; l++) {
+        parent = ref1[l];
+        this.insertLink(parent, node);
+      }
+    }
+    ref2 = this.graph.sources();
+    for (m = 0, len3 = ref2.length; m < len3; m++) {
+      source = ref2[m];
+      (this.graph.node(source)).class = 'node-type-source';
+    }
+    ref3 = this.graph.sinks();
+    for (o = 0, len4 = ref3.length; o < len4; o++) {
+      sink = ref3[o];
+      (this.graph.node(sink)).class = 'node-type-sink';
+    }
+    return this.render();
+  }
+
+  generateTable() {
+    var entry, id, idx, j, k, key, l, len, len1, len2, n, ref, tbl, val, variant, variantcopy, worstcasepervariant;
+    entry = {
+      name: 'start'
+    };
+    tbl = [];
+    id = 0;
+    worstcasepervariant = null;
+    ref = this.net.sortTopologically();
+    // Build up Layer Table
+    for (j = 0, len = ref.length; j < len; j++) {
+      n = ref[j];
+      // summarize Values in Variant Implementations
+      if (do_variants_analysis) {
+        if (n.analysis.variants.length > 0) {
+          if (!worstcasepervariant) { // initial copy
+            worstcasepervariant = _.cloneDeep(n.analysis.variants);
+          }
+          variantcopy = _.extend([], n.analysis.variants);
+          for (idx = k = 0, len1 = variantcopy.length; k < len1; idx = ++k) {
+            variant = variantcopy[idx];
+            for (key in variant) {
+              val = variant[key];
+              if (worstcasepervariant[idx][key] < val) {
+                worstcasepervariant[idx][key] = val;
+              }
+            }
+            for (key in variant) {
+              val = variant[key];
+              if (val > 0) {
+                variant[key] = this.toSuffixForm(val);
+              }
+            }
+          }
+        }
+      }
+      id++;
+      entry = {
+        ID: id,
+        name: n.name,
+        type: n.type,
+        batch: n.analysis.batchIn,
+        ch_in: n.analysis.chIn,
+        dim_in: n.analysis.wIn + 'x' + n.analysis.hIn,
+        ch_out: n.analysis.chOut,
+        dim_out: n.analysis.wOut + 'x' + n.analysis.hOut,
+        ops_raw: n.analysis.comp,
+        mem_raw: n.analysis.mem
+      };
+      if (do_variants_analysis) {
+        entry.implementations = n.analysis.variants;
+      }
+      tbl.push(entry);
+    }
+    if (do_variants_analysis && worstcasepervariant) {
+// worst case variant summary
+      for (l = 0, len2 = worstcasepervariant.length; l < len2; l++) {
+        variant = worstcasepervariant[l];
+        for (key in variant) {
+          val = variant[key];
+          if (val > 0) {
+            variant[key] = this.toSuffixForm(val);
+          }
+        }
+      }
+      entry = {
+        ID: 999,
+        name: "Worst-Case Requirements",
+        implementations: worstcasepervariant
+      };
+      tbl.push(entry);
+    }
+    return tbl;
+  }
+
+  toSuffixForm(num, decimals = 2) {
+    var exponent, exponents, factor, i, j, len, suffices, suffix;
+    exponents = [12, 9, 6, 3];
+    suffices = ["T", "G", "M", "k"];
+    decimals = Math.pow(10, decimals);
+//debugger
+    for (i = j = 0, len = exponents.length; j < len; i = ++j) {
+      exponent = exponents[i];
+      suffix = suffices[i];
+      factor = Math.pow(10, exponent);
+      if (num > factor) {
+        return Math.round(num / factor * decimals) / decimals + suffix;
+      }
+    }
+    // too small, no suffix
+    return num;
+  }
+
+  summarizeTable(tbl) {
+    var entry, j, k, key, len, len1, n, num_subs, ref, ref1, ref2, ref3, ref4, ref5, slashindex, summary, summary_without_raw, total, val;
+    entry = {
+      name: 'start'
+    };
+    summary = [];
+    num_subs = 0;
+    for (j = 0, len = tbl.length; j < len; j++) {
+      n = tbl[j];
+      slashindex = n.name.indexOf('/');
+      if (slashindex > 0 && entry.name.substring(0, slashindex) === n.name.substring(0, slashindex)) { // layer has same prefix as current summary item
+        num_subs++;
+        entry.name = n.name.substring(0, slashindex);
+        entry.type = 'submodule(' + num_subs + ')';
+        entry.ch_out = n.ch_out;
+        entry.dim_out = n.dim_out;
+        for (key in entry.ops_raw) {
+          entry.ops_raw[key] += n.ops_raw[key];
+        }
+        for (key in entry.mem_raw) {
+          entry.mem_raw[key] += n.mem_raw[key];
+        }
+        ref = entry.ops_raw;
+        for (key in ref) {
+          val = ref[key];
+          if (val > 0) {
+            entry.ops[key] = this.toSuffixForm(val);
+          }
+        }
+        ref1 = entry.mem_raw;
+        for (key in ref1) {
+          val = ref1[key];
+          if (val > 0) {
+            entry.mem[key] = this.toSuffixForm(val);
+          }
+        }
+        //debugger
+        summary.pop();
+        summary.push(entry);
+      } else {
+        num_subs = 0;
+        entry = {
+          ID: n.ID,
+          name: n.name,
+          type: n.type,
+          batch: n.batchIn,
+          ch_in: n.ch_in,
+          dim_in: n.dim_in,
+          ch_out: n.ch_out,
+          dim_out: n.dim_out,
+          ops_raw: _.extend({}, n.ops_raw),
+          mem_raw: _.extend({}, n.mem_raw),
+          ops: {},
+          mem: {}
+        };
+        ref2 = entry.ops_raw;
+        for (key in ref2) {
+          val = ref2[key];
+          if (val > 0) {
+            entry.ops[key] = this.toSuffixForm(val);
+          }
+        }
+        ref3 = entry.mem_raw;
+        for (key in ref3) {
+          val = ref3[key];
+          if (val > 0) {
+            entry.mem[key] = this.toSuffixForm(val);
+          }
+        }
+        summary.push(entry);
+      }
+    }
+    // initialize TOTAL row
+    total = {
+      name: 'TOTAL',
+      ops_raw: {},
+      mem_raw: {},
+      ops: {},
+      mem: {}
+    };
+    _.extend(total.ops_raw, summary[0].ops_raw); // copy zeros from data layer
+    _.extend(total.mem_raw, summary[0].mem_raw); // idem
+    total.mem_raw.activation = 0; // data layer already uses activation --> set to zero
+    for (k = 0, len1 = summary.length; k < len1; k++) {
+      entry = summary[k];
+      for (key in entry.ops_raw) {
+        //debugger
+        total.ops_raw[key] += entry.ops_raw[key];
+      }
+      for (key in entry.mem_raw) {
+        total.mem_raw[key] += entry.mem_raw[key];
+      }
+    }
+    ref4 = total.ops_raw;
+    for (key in ref4) {
+      val = ref4[key];
+      total.ops[key] = this.toSuffixForm(val);
+    }
+    ref5 = total.mem_raw;
+    for (key in ref5) {
+      val = ref5[key];
+      total.mem[key] = this.toSuffixForm(val);
+    }
+    summary.push(total);
+    summary_without_raw = (function() {
+      var l, len2, results;
+      results = [];
+      for (l = 0, len2 = summary.length; l < len2; l++) {
+        entry = summary[l];
+        results.push(_.omit(entry, ['ops_raw', 'mem_raw']));
+      }
+      return results;
+    })();
+    return summary_without_raw;
+  }
+
+  renderTable() {
+    var $node_elem, $table_elem, areatbl, detail, dim_in, entry, j, k, len, len1, line, ref, ref1, ref2, ref3, ref4, row, row_array, scroll_to, suffix, summary, summary_body, summary_table;
+    // Generate Detail Table and Summary
+    detail = this.generateTable();
+    summary = this.summarizeTable(detail);
+    $(this.table).html('<h3>Summary:</h3><a id="summary"></a>' + Tableify(summary) + '<h3>Details:</h3><a id="details"></a>' + Tableify(detail));
+    $(this.table + ' table').tablesorter();
+    // Add Click-to-Scroll Handlers
+    // Closure Function that executes scroll:
+    scroll_to = function(el) {
+      return function() {
+        var removeHighlight, top_coord;
+        top_coord = $(el).offset().top - 200;
+        $("body,html").animate({
+          scrollTop: top_coord
+        }, 200);
+        $(el).addClass('node-highlight');
+        removeHighlight = function(node) {
+          return function() {
+            return $(node).removeClass('node-highlight');
+          };
+        };
+        return window.setTimeout(removeHighlight(el), 4000);
+      };
+    };
+    // Add Click-to-Scroll to all summary rows, except last
+    summary_table = $(this.table + ' table')[0];
+    summary_body = summary_table.children[1];
+    row_array = Array.prototype.slice.call(summary_body.children);
+    ref = row_array.slice(0, -1);
+    for (j = 0, len = ref.length; j < len; j++) {
+      row = ref[j];
+      // Add Link between Node and Table Element -> both directions work
+      $table_elem = $(row.children[1]);
+      $node_elem = $('div[id^="node-' + $table_elem.text() + '"]');
+      $table_elem.click(scroll_to($node_elem));
+      $node_elem.click(scroll_to($table_elem));
+    }
+    if (do_variants_analysis) {
+      // Calculate Per-Layer Statistics
+      areatbl = [];
+      for (k = 0, len1 = detail.length; k < len1; k++) {
+        entry = detail[k];
+        if (!(entry.type === "Convolution" || entry.type === "Concat" || entry.type === "SoftmaxWithLoss" || entry.type === "innerproduct")) {
+          continue;
+        }
+        // extract input dimension:
+        dim_in = (ref1 = entry.dim_in) != null ? ref1.split("x").pop() : void 0;
+        // add entry
+        suffix = " " + this.net.name;
+        line = {};
+        line["layer"] = entry.name;
+        line["capacity" + suffix] = ((ref2 = entry.mem_raw) != null ? ref2.activation : void 0) > 0 ? entry.mem_raw.activation : "";
+        line["macc " + suffix] = ((ref3 = entry.ops_raw) != null ? ref3.macc : void 0) > 0 ? entry.ops_raw.macc : "";
+        line["param " + suffix] = ((ref4 = entry.mem_raw) != null ? ref4.param : void 0) > 0 ? entry.mem_raw.param : "";
+        line["ch_out " + suffix] = entry.ch_out;
+        line["width " + suffix] = dim_in;
+        areatbl.push(line);
+      }
+      $(Tableify(areatbl)).appendTo(this.table);
+    }
+    return null;
+  }
+
+  insertNode(layers) {
+    var baseNode, j, layer, len, nodeClass, nodeDesc, nodeLabel;
+    baseNode = layers[0];
+    nodeClass = 'node-type-' + baseNode.type.replace(/_/g, '-').toLowerCase();
+    nodeLabel = '';
+    for (j = 0, len = layers.length; j < len; j++) {
+      layer = layers[j];
+      layer.isInGraph = true;
+      nodeLabel += this.generateLabel(layer);
+      nodeDesc = {
+        labelType: 'html',
+        label: nodeLabel,
+        class: nodeClass,
+        layers: layers,
+        rx: 5,
+        ry: 5
+      };
+    }
+    if (this.iconify) {
+      _.extend(nodeDesc, {
+        shape: 'circle'
+      });
+    }
+    return this.graph.setNode(baseNode.name, nodeDesc);
+  }
+
+  generateLabel(layer) {
+    if (!this.iconify) {
+      return '<div class="node-label" id="node-' + layer.name + '">' + layer.name + '</div>';
+    } else {
+      return '';
+    }
+  }
+
+  insertLink(src, dst) {
+    var b, ch, h, lbl, ref, ref1, ref2, ref3, w;
+    if (!this.iconify) {
+      ch = (ref = src.analysis.chOut) != null ? ref : "?";
+      w = (ref1 = src.analysis.wOut) != null ? ref1 : "?";
+      h = (ref2 = src.analysis.hOut) != null ? ref2 : "?";
+      b = (ref3 = src.analysis.batchOut) != null ? ref3 : "?";
+      lbl = ch + 'ch ⋅ ' + w + '×' + h;
+      if (b > 1) {
+        lbl += ' (×' + b + ')';
+      }
+    } else {
+      lbl = '';
+    }
+    return this.graph.setEdge(src.name, dst.name, {
+      arrowhead: 'vee',
+      label: lbl
+    });
+  }
+
+  renderKey(key) {
+    return key.replace(/_/g, ' ');
+  }
+
+  renderValue(value) {
+    if (Array.isArray(value)) {
+      return value.join(', ');
+    }
+    return value;
+  }
+
+  renderSection(section) {
+    var isSection, key, s, val;
+    s = '';
+    for (key in section) {
+      if (!hasProp.call(section, key)) continue;
+      val = section[key];
+      isSection = (typeof val === 'object') && !Array.isArray(val);
+      if (isSection) {
+        s += '<div class="node-param-section-title node-param-key">' + this.renderKey(key) + '</div>';
+        s += '<div class="node-param-section">';
+        s += this.renderSection(val);
+      } else {
+        s += '<div class="node-param-row">';
+        s += '<span class="node-param-key">' + this.renderKey(key) + ': </span>';
+        s += '<span class="node-param-value">' + this.renderValue(val) + '</span>';
+      }
+      s += '</div>';
+    }
+    return s;
+  }
+
+  tipForNode(nodeKey) {
+    var j, layer, len, node, ref, s;
+    node = this.graph.node(nodeKey);
+    s = '';
+    ref = node.layers;
+    for (j = 0, len = ref.length; j < len; j++) {
+      layer = ref[j];
+      s += '<div class="node-info-group">';
+      s += '<div class="node-info-header">';
+      s += '<span class="node-info-title">' + layer.name + '</span>';
+      s += ' &middot; ';
+      s += '<span class="node-info-type">' + this.renderKey(layer.type) + '</span>';
+      if (layer.annotation != null) {
+        s += ' &middot; <span class="node-info-annotation">' + layer.annotation + '</span>';
+      }
+      s += '</div>';
+      s += this.renderSection(layer.attribs);
+    }
+    return s;
+  }
+
+  render() {
+    var bbox, graphRender, svg, svgGroup, that, tipPositions;
+    svg = d3.select(this.parent);
+    svgGroup = svg.append('g');
+    graphRender = new dagreD3.render();
+    graphRender(svgGroup, this.graph);
+    // Size to fit.
+    // getBBox appears to do the right thing on Chrome,
+    // but not on Firefox. getBoundingClientRect works on both.
+    bbox = svgGroup.node().getBoundingClientRect();
+    svg.attr('width', bbox.width);
+    svg.attr('height', bbox.height);
+    // Configure Tooltips.
+    tipPositions = {
+      tb: {
+        my: 'left center',
+        at: 'right center'
+      },
+      lr: {
+        my: 'top center',
+        at: 'bottom center'
+      }
+    };
+    that = this;
+    return svgGroup.selectAll("g.node").each(function(nodeKey) {
+      var position;
+      position = tipPositions[that.layoutDirection];
+      position.viewport = $(window);
+      return $(this).qtip({
+        content: {
+          text: that.tipForNode(nodeKey)
+        },
+        position: position,
+        show: {
+          delay: 0,
+          effect: false
+        },
+        hide: {
+          effect: false
+        }
+      });
+    });
+  }
+
+};
+
+
+},{"tableify":11,"tablesorter":12}],10:[function(require,module,exports){
 /*!
- * jQuery JavaScript Library v3.2.1
+ * jQuery JavaScript Library v3.4.1
  * https://jquery.com/
  *
  * Includes Sizzle.js
@@ -10,7 +3313,7 @@
  * Released under the MIT license
  * https://jquery.org/license
  *
- * Date: 2017-03-20T18:59Z
+ * Date: 2019-05-01T21:04Z
  */
 ( function( global, factory ) {
 
@@ -72,16 +3375,70 @@ var ObjectFunctionString = fnToString.call( Object );
 
 var support = {};
 
+var isFunction = function isFunction( obj ) {
+
+      // Support: Chrome <=57, Firefox <=52
+      // In some browsers, typeof returns "function" for HTML <object> elements
+      // (i.e., `typeof document.createElement( "object" ) === "function"`).
+      // We don't want to classify *any* DOM node as a function.
+      return typeof obj === "function" && typeof obj.nodeType !== "number";
+  };
 
 
-	function DOMEval( code, doc ) {
+var isWindow = function isWindow( obj ) {
+		return obj != null && obj === obj.window;
+	};
+
+
+
+
+	var preservedScriptAttributes = {
+		type: true,
+		src: true,
+		nonce: true,
+		noModule: true
+	};
+
+	function DOMEval( code, node, doc ) {
 		doc = doc || document;
 
-		var script = doc.createElement( "script" );
+		var i, val,
+			script = doc.createElement( "script" );
 
 		script.text = code;
+		if ( node ) {
+			for ( i in preservedScriptAttributes ) {
+
+				// Support: Firefox 64+, Edge 18+
+				// Some browsers don't support the "nonce" property on scripts.
+				// On the other hand, just using `getAttribute` is not enough as
+				// the `nonce` attribute is reset to an empty string whenever it
+				// becomes browsing-context connected.
+				// See https://github.com/whatwg/html/issues/2369
+				// See https://html.spec.whatwg.org/#nonce-attributes
+				// The `node.getAttribute` check was added for the sake of
+				// `jQuery.globalEval` so that it can fake a nonce-containing node
+				// via an object.
+				val = node[ i ] || node.getAttribute && node.getAttribute( i );
+				if ( val ) {
+					script.setAttribute( i, val );
+				}
+			}
+		}
 		doc.head.appendChild( script ).parentNode.removeChild( script );
 	}
+
+
+function toType( obj ) {
+	if ( obj == null ) {
+		return obj + "";
+	}
+
+	// Support: Android <=2.3 only (functionish RegExp)
+	return typeof obj === "object" || typeof obj === "function" ?
+		class2type[ toString.call( obj ) ] || "object" :
+		typeof obj;
+}
 /* global Symbol */
 // Defining this global in .eslintrc.json would create a danger of using the global
 // unguarded in another place, it seems safer to define global only for this module
@@ -89,7 +3446,7 @@ var support = {};
 
 
 var
-	version = "3.2.1",
+	version = "3.4.1",
 
 	// Define a local copy of jQuery
 	jQuery = function( selector, context ) {
@@ -101,16 +3458,7 @@ var
 
 	// Support: Android <=4.0 only
 	// Make sure we trim BOM and NBSP
-	rtrim = /^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,
-
-	// Matches dashed string for camelizing
-	rmsPrefix = /^-ms-/,
-	rdashAlpha = /-([a-z])/g,
-
-	// Used by jQuery.camelCase as callback to replace()
-	fcamelCase = function( all, letter ) {
-		return letter.toUpperCase();
-	};
+	rtrim = /^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g;
 
 jQuery.fn = jQuery.prototype = {
 
@@ -210,7 +3558,7 @@ jQuery.extend = jQuery.fn.extend = function() {
 	}
 
 	// Handle case when target is a string or something (possible in deep copy)
-	if ( typeof target !== "object" && !jQuery.isFunction( target ) ) {
+	if ( typeof target !== "object" && !isFunction( target ) ) {
 		target = {};
 	}
 
@@ -227,25 +3575,28 @@ jQuery.extend = jQuery.fn.extend = function() {
 
 			// Extend the base object
 			for ( name in options ) {
-				src = target[ name ];
 				copy = options[ name ];
 
+				// Prevent Object.prototype pollution
 				// Prevent never-ending loop
-				if ( target === copy ) {
+				if ( name === "__proto__" || target === copy ) {
 					continue;
 				}
 
 				// Recurse if we're merging plain objects or arrays
 				if ( deep && copy && ( jQuery.isPlainObject( copy ) ||
 					( copyIsArray = Array.isArray( copy ) ) ) ) {
+					src = target[ name ];
 
-					if ( copyIsArray ) {
-						copyIsArray = false;
-						clone = src && Array.isArray( src ) ? src : [];
-
+					// Ensure proper type for the source value
+					if ( copyIsArray && !Array.isArray( src ) ) {
+						clone = [];
+					} else if ( !copyIsArray && !jQuery.isPlainObject( src ) ) {
+						clone = {};
 					} else {
-						clone = src && jQuery.isPlainObject( src ) ? src : {};
+						clone = src;
 					}
+					copyIsArray = false;
 
 					// Never move original objects, clone them
 					target[ name ] = jQuery.extend( deep, clone, copy );
@@ -276,28 +3627,6 @@ jQuery.extend( {
 
 	noop: function() {},
 
-	isFunction: function( obj ) {
-		return jQuery.type( obj ) === "function";
-	},
-
-	isWindow: function( obj ) {
-		return obj != null && obj === obj.window;
-	},
-
-	isNumeric: function( obj ) {
-
-		// As of jQuery 3.0, isNumeric is limited to
-		// strings and numbers (primitives or objects)
-		// that can be coerced to finite numbers (gh-2662)
-		var type = jQuery.type( obj );
-		return ( type === "number" || type === "string" ) &&
-
-			// parseFloat NaNs numeric-cast false positives ("")
-			// ...but misinterprets leading-number strings, particularly hex literals ("0x...")
-			// subtraction forces infinities to NaN
-			!isNaN( obj - parseFloat( obj ) );
-	},
-
 	isPlainObject: function( obj ) {
 		var proto, Ctor;
 
@@ -320,9 +3649,6 @@ jQuery.extend( {
 	},
 
 	isEmptyObject: function( obj ) {
-
-		/* eslint-disable no-unused-vars */
-		// See https://github.com/eslint/eslint/issues/6125
 		var name;
 
 		for ( name in obj ) {
@@ -331,27 +3657,9 @@ jQuery.extend( {
 		return true;
 	},
 
-	type: function( obj ) {
-		if ( obj == null ) {
-			return obj + "";
-		}
-
-		// Support: Android <=2.3 only (functionish RegExp)
-		return typeof obj === "object" || typeof obj === "function" ?
-			class2type[ toString.call( obj ) ] || "object" :
-			typeof obj;
-	},
-
 	// Evaluates a script in a global context
-	globalEval: function( code ) {
-		DOMEval( code );
-	},
-
-	// Convert dashed to camelCase; used by the css and data modules
-	// Support: IE <=9 - 11, Edge 12 - 13
-	// Microsoft forgot to hump their vendor prefix (#9572)
-	camelCase: function( string ) {
-		return string.replace( rmsPrefix, "ms-" ).replace( rdashAlpha, fcamelCase );
+	globalEval: function( code, options ) {
+		DOMEval( code, { nonce: options && options.nonce } );
 	},
 
 	each: function( obj, callback ) {
@@ -474,37 +3782,6 @@ jQuery.extend( {
 	// A global GUID counter for objects
 	guid: 1,
 
-	// Bind a function to a context, optionally partially applying any
-	// arguments.
-	proxy: function( fn, context ) {
-		var tmp, args, proxy;
-
-		if ( typeof context === "string" ) {
-			tmp = fn[ context ];
-			context = fn;
-			fn = tmp;
-		}
-
-		// Quick check to determine if target is callable, in the spec
-		// this throws a TypeError, but we will just return undefined.
-		if ( !jQuery.isFunction( fn ) ) {
-			return undefined;
-		}
-
-		// Simulated bind
-		args = slice.call( arguments, 2 );
-		proxy = function() {
-			return fn.apply( context || this, args.concat( slice.call( arguments ) ) );
-		};
-
-		// Set the guid of unique handler to the same of original handler, so it can be removed
-		proxy.guid = fn.guid = fn.guid || jQuery.guid++;
-
-		return proxy;
-	},
-
-	now: Date.now,
-
 	// jQuery.support is not used in Core but other projects attach their
 	// properties to it so it needs to exist.
 	support: support
@@ -527,9 +3804,9 @@ function isArrayLike( obj ) {
 	// hasOwn isn't used here due to false negatives
 	// regarding Nodelist length in IE
 	var length = !!obj && "length" in obj && obj.length,
-		type = jQuery.type( obj );
+		type = toType( obj );
 
-	if ( type === "function" || jQuery.isWindow( obj ) ) {
+	if ( isFunction( obj ) || isWindow( obj ) ) {
 		return false;
 	}
 
@@ -538,14 +3815,14 @@ function isArrayLike( obj ) {
 }
 var Sizzle =
 /*!
- * Sizzle CSS Selector Engine v2.3.3
+ * Sizzle CSS Selector Engine v2.3.4
  * https://sizzlejs.com/
  *
- * Copyright jQuery Foundation and other contributors
+ * Copyright JS Foundation and other contributors
  * Released under the MIT license
- * http://jquery.org/license
+ * https://js.foundation/
  *
- * Date: 2016-08-08
+ * Date: 2019-04-08
  */
 (function( window ) {
 
@@ -579,6 +3856,7 @@ var i,
 	classCache = createCache(),
 	tokenCache = createCache(),
 	compilerCache = createCache(),
+	nonnativeSelectorCache = createCache(),
 	sortOrder = function( a, b ) {
 		if ( a === b ) {
 			hasDuplicate = true;
@@ -640,8 +3918,7 @@ var i,
 
 	rcomma = new RegExp( "^" + whitespace + "*," + whitespace + "*" ),
 	rcombinators = new RegExp( "^" + whitespace + "*([>+~]|" + whitespace + ")" + whitespace + "*" ),
-
-	rattributeQuotes = new RegExp( "=" + whitespace + "*([^\\]'\"]*?)" + whitespace + "*\\]", "g" ),
+	rdescend = new RegExp( whitespace + "|>" ),
 
 	rpseudo = new RegExp( pseudos ),
 	ridentifier = new RegExp( "^" + identifier + "$" ),
@@ -662,6 +3939,7 @@ var i,
 			whitespace + "*((?:-\\d)?\\d*)" + whitespace + "*\\)|)(?=[^-]|$)", "i" )
 	},
 
+	rhtml = /HTML$/i,
 	rinputs = /^(?:input|select|textarea|button)$/i,
 	rheader = /^h\d$/i,
 
@@ -716,9 +3994,9 @@ var i,
 		setDocument();
 	},
 
-	disabledAncestor = addCombinator(
+	inDisabledFieldset = addCombinator(
 		function( elem ) {
-			return elem.disabled === true && ("form" in elem || "label" in elem);
+			return elem.disabled === true && elem.nodeName.toLowerCase() === "fieldset";
 		},
 		{ dir: "parentNode", next: "legend" }
 	);
@@ -831,18 +4109,22 @@ function Sizzle( selector, context, results, seed ) {
 
 			// Take advantage of querySelectorAll
 			if ( support.qsa &&
-				!compilerCache[ selector + " " ] &&
-				(!rbuggyQSA || !rbuggyQSA.test( selector )) ) {
+				!nonnativeSelectorCache[ selector + " " ] &&
+				(!rbuggyQSA || !rbuggyQSA.test( selector )) &&
 
-				if ( nodeType !== 1 ) {
-					newContext = context;
-					newSelector = selector;
-
-				// qSA looks outside Element context, which is not what we want
-				// Thanks to Andrew Dupont for this workaround technique
-				// Support: IE <=8
+				// Support: IE 8 only
 				// Exclude object elements
-				} else if ( context.nodeName.toLowerCase() !== "object" ) {
+				(nodeType !== 1 || context.nodeName.toLowerCase() !== "object") ) {
+
+				newSelector = selector;
+				newContext = context;
+
+				// qSA considers elements outside a scoping root when evaluating child or
+				// descendant combinators, which is not what we want.
+				// In such cases, we work around the behavior by prefixing every selector in the
+				// list with an ID selector referencing the scope context.
+				// Thanks to Andrew Dupont for this technique.
+				if ( nodeType === 1 && rdescend.test( selector ) ) {
 
 					// Capture the context ID, setting it first if necessary
 					if ( (nid = context.getAttribute( "id" )) ) {
@@ -864,17 +4146,16 @@ function Sizzle( selector, context, results, seed ) {
 						context;
 				}
 
-				if ( newSelector ) {
-					try {
-						push.apply( results,
-							newContext.querySelectorAll( newSelector )
-						);
-						return results;
-					} catch ( qsaError ) {
-					} finally {
-						if ( nid === expando ) {
-							context.removeAttribute( "id" );
-						}
+				try {
+					push.apply( results,
+						newContext.querySelectorAll( newSelector )
+					);
+					return results;
+				} catch ( qsaError ) {
+					nonnativeSelectorCache( selector, true );
+				} finally {
+					if ( nid === expando ) {
+						context.removeAttribute( "id" );
 					}
 				}
 			}
@@ -1038,7 +4319,7 @@ function createDisabledPseudo( disabled ) {
 					// Where there is no isDisabled, check manually
 					/* jshint -W018 */
 					elem.isDisabled !== !disabled &&
-						disabledAncestor( elem ) === disabled;
+						inDisabledFieldset( elem ) === disabled;
 			}
 
 			return elem.disabled === disabled;
@@ -1095,10 +4376,13 @@ support = Sizzle.support = {};
  * @returns {Boolean} True iff elem is a non-HTML XML node
  */
 isXML = Sizzle.isXML = function( elem ) {
-	// documentElement is verified for cases where it doesn't yet exist
-	// (such as loading iframes in IE - #4833)
-	var documentElement = elem && (elem.ownerDocument || elem).documentElement;
-	return documentElement ? documentElement.nodeName !== "HTML" : false;
+	var namespace = elem.namespaceURI,
+		docElem = (elem.ownerDocument || elem).documentElement;
+
+	// Support: IE <=8
+	// Assume HTML when documentElement doesn't yet exist, such as inside loading iframes
+	// https://bugs.jquery.com/ticket/4833
+	return !rhtml.test( namespace || docElem && docElem.nodeName || "HTML" );
 };
 
 /**
@@ -1520,11 +4804,8 @@ Sizzle.matchesSelector = function( elem, expr ) {
 		setDocument( elem );
 	}
 
-	// Make sure that attribute selectors are quoted
-	expr = expr.replace( rattributeQuotes, "='$1']" );
-
 	if ( support.matchesSelector && documentIsHTML &&
-		!compilerCache[ expr + " " ] &&
+		!nonnativeSelectorCache[ expr + " " ] &&
 		( !rbuggyMatches || !rbuggyMatches.test( expr ) ) &&
 		( !rbuggyQSA     || !rbuggyQSA.test( expr ) ) ) {
 
@@ -1538,7 +4819,9 @@ Sizzle.matchesSelector = function( elem, expr ) {
 					elem.document && elem.document.nodeType !== 11 ) {
 				return ret;
 			}
-		} catch (e) {}
+		} catch (e) {
+			nonnativeSelectorCache( expr, true );
+		}
 	}
 
 	return Sizzle( expr, document, null, [ elem ] ).length > 0;
@@ -1997,7 +5280,7 @@ Expr = Sizzle.selectors = {
 		"contains": markFunction(function( text ) {
 			text = text.replace( runescape, funescape );
 			return function( elem ) {
-				return ( elem.textContent || elem.innerText || getText( elem ) ).indexOf( text ) > -1;
+				return ( elem.textContent || getText( elem ) ).indexOf( text ) > -1;
 			};
 		}),
 
@@ -2136,7 +5419,11 @@ Expr = Sizzle.selectors = {
 		}),
 
 		"lt": createPositionalPseudo(function( matchIndexes, length, argument ) {
-			var i = argument < 0 ? argument + length : argument;
+			var i = argument < 0 ?
+				argument + length :
+				argument > length ?
+					length :
+					argument;
 			for ( ; --i >= 0; ) {
 				matchIndexes.push( i );
 			}
@@ -2849,11 +6136,9 @@ var rsingleTag = ( /^<([a-z][^\/\0>:\x20\t\r\n\f]*)[\x20\t\r\n\f]*\/?>(?:<\/\1>|
 
 
 
-var risSimple = /^.[^:#\[\.,]*$/;
-
 // Implement the identical functionality for filter and not
 function winnow( elements, qualifier, not ) {
-	if ( jQuery.isFunction( qualifier ) ) {
+	if ( isFunction( qualifier ) ) {
 		return jQuery.grep( elements, function( elem, i ) {
 			return !!qualifier.call( elem, i, elem ) !== not;
 		} );
@@ -2873,16 +6158,8 @@ function winnow( elements, qualifier, not ) {
 		} );
 	}
 
-	// Simple selector that can be filtered directly, removing non-Elements
-	if ( risSimple.test( qualifier ) ) {
-		return jQuery.filter( qualifier, elements, not );
-	}
-
-	// Complex selector, compare the two sets, removing non-Elements
-	qualifier = jQuery.filter( qualifier, elements );
-	return jQuery.grep( elements, function( elem ) {
-		return ( indexOf.call( qualifier, elem ) > -1 ) !== not && elem.nodeType === 1;
-	} );
+	// Filtered directly for both simple and complex selectors
+	return jQuery.filter( qualifier, elements, not );
 }
 
 jQuery.filter = function( expr, elems, not ) {
@@ -3003,7 +6280,7 @@ var rootjQuery,
 						for ( match in context ) {
 
 							// Properties of context are called as methods if possible
-							if ( jQuery.isFunction( this[ match ] ) ) {
+							if ( isFunction( this[ match ] ) ) {
 								this[ match ]( context[ match ] );
 
 							// ...and otherwise set as attributes
@@ -3046,7 +6323,7 @@ var rootjQuery,
 
 		// HANDLE: $(function)
 		// Shortcut for document ready
-		} else if ( jQuery.isFunction( selector ) ) {
+		} else if ( isFunction( selector ) ) {
 			return root.ready !== undefined ?
 				root.ready( selector ) :
 
@@ -3196,18 +6473,18 @@ jQuery.each( {
 		return siblings( elem.firstChild );
 	},
 	contents: function( elem ) {
-        if ( nodeName( elem, "iframe" ) ) {
-            return elem.contentDocument;
-        }
+		if ( typeof elem.contentDocument !== "undefined" ) {
+			return elem.contentDocument;
+		}
 
-        // Support: IE 9 - 11 only, iOS 7 only, Android Browser <=4.3 only
-        // Treat the template element as a regular one in browsers that
-        // don't support it.
-        if ( nodeName( elem, "template" ) ) {
-            elem = elem.content || elem;
-        }
+		// Support: IE 9 - 11 only, iOS 7 only, Android Browser <=4.3 only
+		// Treat the template element as a regular one in browsers that
+		// don't support it.
+		if ( nodeName( elem, "template" ) ) {
+			elem = elem.content || elem;
+		}
 
-        return jQuery.merge( [], elem.childNodes );
+		return jQuery.merge( [], elem.childNodes );
 	}
 }, function( name, fn ) {
 	jQuery.fn[ name ] = function( until, selector ) {
@@ -3361,11 +6638,11 @@ jQuery.Callbacks = function( options ) {
 
 					( function add( args ) {
 						jQuery.each( args, function( _, arg ) {
-							if ( jQuery.isFunction( arg ) ) {
+							if ( isFunction( arg ) ) {
 								if ( !options.unique || !self.has( arg ) ) {
 									list.push( arg );
 								}
-							} else if ( arg && arg.length && jQuery.type( arg ) !== "string" ) {
+							} else if ( arg && arg.length && toType( arg ) !== "string" ) {
 
 								// Inspect recursively
 								add( arg );
@@ -3480,11 +6757,11 @@ function adoptValue( value, resolve, reject, noValue ) {
 	try {
 
 		// Check for promise aspect first to privilege synchronous behavior
-		if ( value && jQuery.isFunction( ( method = value.promise ) ) ) {
+		if ( value && isFunction( ( method = value.promise ) ) ) {
 			method.call( value ).done( resolve ).fail( reject );
 
 		// Other thenables
-		} else if ( value && jQuery.isFunction( ( method = value.then ) ) ) {
+		} else if ( value && isFunction( ( method = value.then ) ) ) {
 			method.call( value, resolve, reject );
 
 		// Other non-thenables
@@ -3542,14 +6819,14 @@ jQuery.extend( {
 						jQuery.each( tuples, function( i, tuple ) {
 
 							// Map tuples (progress, done, fail) to arguments (done, fail, progress)
-							var fn = jQuery.isFunction( fns[ tuple[ 4 ] ] ) && fns[ tuple[ 4 ] ];
+							var fn = isFunction( fns[ tuple[ 4 ] ] ) && fns[ tuple[ 4 ] ];
 
 							// deferred.progress(function() { bind to newDefer or newDefer.notify })
 							// deferred.done(function() { bind to newDefer or newDefer.resolve })
 							// deferred.fail(function() { bind to newDefer or newDefer.reject })
 							deferred[ tuple[ 1 ] ]( function() {
 								var returned = fn && fn.apply( this, arguments );
-								if ( returned && jQuery.isFunction( returned.promise ) ) {
+								if ( returned && isFunction( returned.promise ) ) {
 									returned.promise()
 										.progress( newDefer.notify )
 										.done( newDefer.resolve )
@@ -3603,7 +6880,7 @@ jQuery.extend( {
 										returned.then;
 
 									// Handle a returned thenable
-									if ( jQuery.isFunction( then ) ) {
+									if ( isFunction( then ) ) {
 
 										// Special processors (notify) just wait for resolution
 										if ( special ) {
@@ -3699,7 +6976,7 @@ jQuery.extend( {
 							resolve(
 								0,
 								newDefer,
-								jQuery.isFunction( onProgress ) ?
+								isFunction( onProgress ) ?
 									onProgress :
 									Identity,
 								newDefer.notifyWith
@@ -3711,7 +6988,7 @@ jQuery.extend( {
 							resolve(
 								0,
 								newDefer,
-								jQuery.isFunction( onFulfilled ) ?
+								isFunction( onFulfilled ) ?
 									onFulfilled :
 									Identity
 							)
@@ -3722,7 +6999,7 @@ jQuery.extend( {
 							resolve(
 								0,
 								newDefer,
-								jQuery.isFunction( onRejected ) ?
+								isFunction( onRejected ) ?
 									onRejected :
 									Thrower
 							)
@@ -3762,8 +7039,15 @@ jQuery.extend( {
 					// fulfilled_callbacks.disable
 					tuples[ 3 - i ][ 2 ].disable,
 
+					// rejected_handlers.disable
+					// fulfilled_handlers.disable
+					tuples[ 3 - i ][ 3 ].disable,
+
 					// progress_callbacks.lock
-					tuples[ 0 ][ 2 ].lock
+					tuples[ 0 ][ 2 ].lock,
+
+					// progress_handlers.lock
+					tuples[ 0 ][ 3 ].lock
 				);
 			}
 
@@ -3833,7 +7117,7 @@ jQuery.extend( {
 
 			// Use .then() to unwrap secondary thenables (cf. gh-3000)
 			if ( master.state() === "pending" ||
-				jQuery.isFunction( resolveValues[ i ] && resolveValues[ i ].then ) ) {
+				isFunction( resolveValues[ i ] && resolveValues[ i ].then ) ) {
 
 				return master.then();
 			}
@@ -3961,7 +7245,7 @@ var access = function( elems, fn, key, value, chainable, emptyGet, raw ) {
 		bulk = key == null;
 
 	// Sets many values
-	if ( jQuery.type( key ) === "object" ) {
+	if ( toType( key ) === "object" ) {
 		chainable = true;
 		for ( i in key ) {
 			access( elems, fn, i, key[ i ], true, emptyGet, raw );
@@ -3971,7 +7255,7 @@ var access = function( elems, fn, key, value, chainable, emptyGet, raw ) {
 	} else if ( value !== undefined ) {
 		chainable = true;
 
-		if ( !jQuery.isFunction( value ) ) {
+		if ( !isFunction( value ) ) {
 			raw = true;
 		}
 
@@ -4013,6 +7297,23 @@ var access = function( elems, fn, key, value, chainable, emptyGet, raw ) {
 
 	return len ? fn( elems[ 0 ], key ) : emptyGet;
 };
+
+
+// Matches dashed string for camelizing
+var rmsPrefix = /^-ms-/,
+	rdashAlpha = /-([a-z])/g;
+
+// Used by camelCase as callback to replace()
+function fcamelCase( all, letter ) {
+	return letter.toUpperCase();
+}
+
+// Convert dashed to camelCase; used by the css and data modules
+// Support: IE <=9 - 11, Edge 12 - 15
+// Microsoft forgot to hump their vendor prefix (#9572)
+function camelCase( string ) {
+	return string.replace( rmsPrefix, "ms-" ).replace( rdashAlpha, fcamelCase );
+}
 var acceptData = function( owner ) {
 
 	// Accepts only:
@@ -4075,14 +7376,14 @@ Data.prototype = {
 		// Handle: [ owner, key, value ] args
 		// Always use camelCase key (gh-2257)
 		if ( typeof data === "string" ) {
-			cache[ jQuery.camelCase( data ) ] = value;
+			cache[ camelCase( data ) ] = value;
 
 		// Handle: [ owner, { properties } ] args
 		} else {
 
 			// Copy the properties one-by-one to the cache object
 			for ( prop in data ) {
-				cache[ jQuery.camelCase( prop ) ] = data[ prop ];
+				cache[ camelCase( prop ) ] = data[ prop ];
 			}
 		}
 		return cache;
@@ -4092,7 +7393,7 @@ Data.prototype = {
 			this.cache( owner ) :
 
 			// Always use camelCase key (gh-2257)
-			owner[ this.expando ] && owner[ this.expando ][ jQuery.camelCase( key ) ];
+			owner[ this.expando ] && owner[ this.expando ][ camelCase( key ) ];
 	},
 	access: function( owner, key, value ) {
 
@@ -4140,9 +7441,9 @@ Data.prototype = {
 
 				// If key is an array of keys...
 				// We always set camelCase keys, so remove that.
-				key = key.map( jQuery.camelCase );
+				key = key.map( camelCase );
 			} else {
-				key = jQuery.camelCase( key );
+				key = camelCase( key );
 
 				// If a key with the spaces exists, use it.
 				// Otherwise, create an array by matching non-whitespace
@@ -4288,7 +7589,7 @@ jQuery.fn.extend( {
 						if ( attrs[ i ] ) {
 							name = attrs[ i ].name;
 							if ( name.indexOf( "data-" ) === 0 ) {
-								name = jQuery.camelCase( name.slice( 5 ) );
+								name = camelCase( name.slice( 5 ) );
 								dataAttr( elem, name, data[ name ] );
 							}
 						}
@@ -4492,6 +7793,26 @@ var rcssNum = new RegExp( "^(?:([+-])=|)(" + pnum + ")([a-z%]*)$", "i" );
 
 var cssExpand = [ "Top", "Right", "Bottom", "Left" ];
 
+var documentElement = document.documentElement;
+
+
+
+	var isAttached = function( elem ) {
+			return jQuery.contains( elem.ownerDocument, elem );
+		},
+		composed = { composed: true };
+
+	// Support: IE 9 - 11+, Edge 12 - 18+, iOS 10.0 - 10.2 only
+	// Check attachment across shadow DOM boundaries when possible (gh-3504)
+	// Support: iOS 10.0-10.2 only
+	// Early iOS 10 versions support `attachShadow` but not `getRootNode`,
+	// leading to errors. We need to check for `getRootNode`.
+	if ( documentElement.getRootNode ) {
+		isAttached = function( elem ) {
+			return jQuery.contains( elem.ownerDocument, elem ) ||
+				elem.getRootNode( composed ) === elem.ownerDocument;
+		};
+	}
 var isHiddenWithinTree = function( elem, el ) {
 
 		// isHiddenWithinTree might be called from jQuery#filter function;
@@ -4506,7 +7827,7 @@ var isHiddenWithinTree = function( elem, el ) {
 			// Support: Firefox <=43 - 45
 			// Disconnected elements can have computed display: none, so first confirm that elem is
 			// in the document.
-			jQuery.contains( elem.ownerDocument, elem ) &&
+			isAttached( elem ) &&
 
 			jQuery.css( elem, "display" ) === "none";
 	};
@@ -4535,8 +7856,7 @@ var swap = function( elem, options, callback, args ) {
 
 
 function adjustCSS( elem, prop, valueParts, tween ) {
-	var adjusted,
-		scale = 1,
+	var adjusted, scale,
 		maxIterations = 20,
 		currentValue = tween ?
 			function() {
@@ -4549,35 +7869,39 @@ function adjustCSS( elem, prop, valueParts, tween ) {
 		unit = valueParts && valueParts[ 3 ] || ( jQuery.cssNumber[ prop ] ? "" : "px" ),
 
 		// Starting value computation is required for potential unit mismatches
-		initialInUnit = ( jQuery.cssNumber[ prop ] || unit !== "px" && +initial ) &&
+		initialInUnit = elem.nodeType &&
+			( jQuery.cssNumber[ prop ] || unit !== "px" && +initial ) &&
 			rcssNum.exec( jQuery.css( elem, prop ) );
 
 	if ( initialInUnit && initialInUnit[ 3 ] !== unit ) {
 
+		// Support: Firefox <=54
+		// Halve the iteration target value to prevent interference from CSS upper bounds (gh-2144)
+		initial = initial / 2;
+
 		// Trust units reported by jQuery.css
 		unit = unit || initialInUnit[ 3 ];
-
-		// Make sure we update the tween properties later on
-		valueParts = valueParts || [];
 
 		// Iteratively approximate from a nonzero starting point
 		initialInUnit = +initial || 1;
 
-		do {
+		while ( maxIterations-- ) {
 
-			// If previous iteration zeroed out, double until we get *something*.
-			// Use string for doubling so we don't accidentally see scale as unchanged below
-			scale = scale || ".5";
-
-			// Adjust and apply
-			initialInUnit = initialInUnit / scale;
+			// Evaluate and update our best guess (doubling guesses that zero out).
+			// Finish if the scale equals or crosses 1 (making the old*new product non-positive).
 			jQuery.style( elem, prop, initialInUnit + unit );
+			if ( ( 1 - scale ) * ( 1 - ( scale = currentValue() / initial || 0.5 ) ) <= 0 ) {
+				maxIterations = 0;
+			}
+			initialInUnit = initialInUnit / scale;
 
-		// Update scale, tolerating zero or NaN from tween.cur()
-		// Break the loop if scale is unchanged or perfect, or if we've just had enough.
-		} while (
-			scale !== ( scale = currentValue() / initial ) && scale !== 1 && --maxIterations
-		);
+		}
+
+		initialInUnit = initialInUnit * 2;
+		jQuery.style( elem, prop, initialInUnit + unit );
+
+		// Make sure we update the tween properties later on
+		valueParts = valueParts || [];
 	}
 
 	if ( valueParts ) {
@@ -4693,9 +8017,9 @@ jQuery.fn.extend( {
 } );
 var rcheckableType = ( /^(?:checkbox|radio)$/i );
 
-var rtagName = ( /<([a-z][^\/\0>\x20\t\r\n\f]+)/i );
+var rtagName = ( /<([a-z][^\/\0>\x20\t\r\n\f]*)/i );
 
-var rscriptType = ( /^$|\/(?:java|ecma)script/i );
+var rscriptType = ( /^$|^module$|\/(?:java|ecma)script/i );
 
 
 
@@ -4765,7 +8089,7 @@ function setGlobalEval( elems, refElements ) {
 var rhtml = /<|&#?\w+;/;
 
 function buildFragment( elems, context, scripts, selection, ignored ) {
-	var elem, tmp, tag, wrap, contains, j,
+	var elem, tmp, tag, wrap, attached, j,
 		fragment = context.createDocumentFragment(),
 		nodes = [],
 		i = 0,
@@ -4777,7 +8101,7 @@ function buildFragment( elems, context, scripts, selection, ignored ) {
 		if ( elem || elem === 0 ) {
 
 			// Add nodes directly
-			if ( jQuery.type( elem ) === "object" ) {
+			if ( toType( elem ) === "object" ) {
 
 				// Support: Android <=4.0 only, PhantomJS 1 only
 				// push.apply(_, arraylike) throws on ancient WebKit
@@ -4829,13 +8153,13 @@ function buildFragment( elems, context, scripts, selection, ignored ) {
 			continue;
 		}
 
-		contains = jQuery.contains( elem.ownerDocument, elem );
+		attached = isAttached( elem );
 
 		// Append to fragment
 		tmp = getAll( fragment.appendChild( elem ), "script" );
 
 		// Preserve script evaluation history
-		if ( contains ) {
+		if ( attached ) {
 			setGlobalEval( tmp );
 		}
 
@@ -4878,8 +8202,6 @@ function buildFragment( elems, context, scripts, selection, ignored ) {
 	div.innerHTML = "<textarea>x</textarea>";
 	support.noCloneChecked = !!div.cloneNode( true ).lastChild.defaultValue;
 } )();
-var documentElement = document.documentElement;
-
 
 
 var
@@ -4895,8 +8217,19 @@ function returnFalse() {
 	return false;
 }
 
+// Support: IE <=9 - 11+
+// focus() and blur() are asynchronous, except when they are no-op.
+// So expect focus to be synchronous when the element is already active,
+// and blur to be synchronous when the element is not already active.
+// (focus and blur are always synchronous in other supported browsers,
+// this just defines when we can count on it).
+function expectSync( elem, type ) {
+	return ( elem === safeActiveElement() ) === ( type === "focus" );
+}
+
 // Support: IE <=9 only
-// See #13393 for more info
+// Accessing document.activeElement can throw unexpectedly
+// https://bugs.jquery.com/ticket/13393
 function safeActiveElement() {
 	try {
 		return document.activeElement;
@@ -5196,9 +8529,10 @@ jQuery.event = {
 			while ( ( handleObj = matched.handlers[ j++ ] ) &&
 				!event.isImmediatePropagationStopped() ) {
 
-				// Triggered event must either 1) have no namespace, or 2) have namespace(s)
-				// a subset or equal to those in the bound event (both can have no namespace).
-				if ( !event.rnamespace || event.rnamespace.test( handleObj.namespace ) ) {
+				// If the event is namespaced, then each handler is only invoked if it is
+				// specially universal or its namespaces are a superset of the event's.
+				if ( !event.rnamespace || handleObj.namespace === false ||
+					event.rnamespace.test( handleObj.namespace ) ) {
 
 					event.handleObj = handleObj;
 					event.data = handleObj.data;
@@ -5287,7 +8621,7 @@ jQuery.event = {
 			enumerable: true,
 			configurable: true,
 
-			get: jQuery.isFunction( hook ) ?
+			get: isFunction( hook ) ?
 				function() {
 					if ( this.originalEvent ) {
 							return hook( this.originalEvent );
@@ -5322,39 +8656,51 @@ jQuery.event = {
 			// Prevent triggered image.load events from bubbling to window.load
 			noBubble: true
 		},
-		focus: {
-
-			// Fire native event if possible so blur/focus sequence is correct
-			trigger: function() {
-				if ( this !== safeActiveElement() && this.focus ) {
-					this.focus();
-					return false;
-				}
-			},
-			delegateType: "focusin"
-		},
-		blur: {
-			trigger: function() {
-				if ( this === safeActiveElement() && this.blur ) {
-					this.blur();
-					return false;
-				}
-			},
-			delegateType: "focusout"
-		},
 		click: {
 
-			// For checkbox, fire native event so checked state will be right
-			trigger: function() {
-				if ( this.type === "checkbox" && this.click && nodeName( this, "input" ) ) {
-					this.click();
-					return false;
+			// Utilize native event to ensure correct state for checkable inputs
+			setup: function( data ) {
+
+				// For mutual compressibility with _default, replace `this` access with a local var.
+				// `|| data` is dead code meant only to preserve the variable through minification.
+				var el = this || data;
+
+				// Claim the first handler
+				if ( rcheckableType.test( el.type ) &&
+					el.click && nodeName( el, "input" ) ) {
+
+					// dataPriv.set( el, "click", ... )
+					leverageNative( el, "click", returnTrue );
 				}
+
+				// Return false to allow normal processing in the caller
+				return false;
+			},
+			trigger: function( data ) {
+
+				// For mutual compressibility with _default, replace `this` access with a local var.
+				// `|| data` is dead code meant only to preserve the variable through minification.
+				var el = this || data;
+
+				// Force setup before triggering a click
+				if ( rcheckableType.test( el.type ) &&
+					el.click && nodeName( el, "input" ) ) {
+
+					leverageNative( el, "click" );
+				}
+
+				// Return non-false to allow normal event-path propagation
+				return true;
 			},
 
-			// For cross-browser consistency, don't fire native .click() on links
+			// For cross-browser consistency, suppress native .click() on links
+			// Also prevent it if we're currently inside a leveraged native-event stack
 			_default: function( event ) {
-				return nodeName( event.target, "a" );
+				var target = event.target;
+				return rcheckableType.test( target.type ) &&
+					target.click && nodeName( target, "input" ) &&
+					dataPriv.get( target, "click" ) ||
+					nodeName( target, "a" );
 			}
 		},
 
@@ -5370,6 +8716,93 @@ jQuery.event = {
 		}
 	}
 };
+
+// Ensure the presence of an event listener that handles manually-triggered
+// synthetic events by interrupting progress until reinvoked in response to
+// *native* events that it fires directly, ensuring that state changes have
+// already occurred before other listeners are invoked.
+function leverageNative( el, type, expectSync ) {
+
+	// Missing expectSync indicates a trigger call, which must force setup through jQuery.event.add
+	if ( !expectSync ) {
+		if ( dataPriv.get( el, type ) === undefined ) {
+			jQuery.event.add( el, type, returnTrue );
+		}
+		return;
+	}
+
+	// Register the controller as a special universal handler for all event namespaces
+	dataPriv.set( el, type, false );
+	jQuery.event.add( el, type, {
+		namespace: false,
+		handler: function( event ) {
+			var notAsync, result,
+				saved = dataPriv.get( this, type );
+
+			if ( ( event.isTrigger & 1 ) && this[ type ] ) {
+
+				// Interrupt processing of the outer synthetic .trigger()ed event
+				// Saved data should be false in such cases, but might be a leftover capture object
+				// from an async native handler (gh-4350)
+				if ( !saved.length ) {
+
+					// Store arguments for use when handling the inner native event
+					// There will always be at least one argument (an event object), so this array
+					// will not be confused with a leftover capture object.
+					saved = slice.call( arguments );
+					dataPriv.set( this, type, saved );
+
+					// Trigger the native event and capture its result
+					// Support: IE <=9 - 11+
+					// focus() and blur() are asynchronous
+					notAsync = expectSync( this, type );
+					this[ type ]();
+					result = dataPriv.get( this, type );
+					if ( saved !== result || notAsync ) {
+						dataPriv.set( this, type, false );
+					} else {
+						result = {};
+					}
+					if ( saved !== result ) {
+
+						// Cancel the outer synthetic event
+						event.stopImmediatePropagation();
+						event.preventDefault();
+						return result.value;
+					}
+
+				// If this is an inner synthetic event for an event with a bubbling surrogate
+				// (focus or blur), assume that the surrogate already propagated from triggering the
+				// native event and prevent that from happening again here.
+				// This technically gets the ordering wrong w.r.t. to `.trigger()` (in which the
+				// bubbling surrogate propagates *after* the non-bubbling base), but that seems
+				// less bad than duplication.
+				} else if ( ( jQuery.event.special[ type ] || {} ).delegateType ) {
+					event.stopPropagation();
+				}
+
+			// If this is a native event triggered above, everything is now in order
+			// Fire an inner synthetic event with the original arguments
+			} else if ( saved.length ) {
+
+				// ...and capture the result
+				dataPriv.set( this, type, {
+					value: jQuery.event.trigger(
+
+						// Support: IE <=9 - 11+
+						// Extend with the prototype to reset the above stopImmediatePropagation()
+						jQuery.extend( saved[ 0 ], jQuery.Event.prototype ),
+						saved.slice( 1 ),
+						this
+					)
+				} );
+
+				// Abort handling of the native event
+				event.stopImmediatePropagation();
+			}
+		}
+	} );
+}
 
 jQuery.removeEvent = function( elem, type, handle ) {
 
@@ -5422,7 +8855,7 @@ jQuery.Event = function( src, props ) {
 	}
 
 	// Create a timestamp if incoming event doesn't have one
-	this.timeStamp = src && src.timeStamp || jQuery.now();
+	this.timeStamp = src && src.timeStamp || Date.now();
 
 	// Mark it as fixed
 	this[ jQuery.expando ] = true;
@@ -5483,6 +8916,7 @@ jQuery.each( {
 	shiftKey: true,
 	view: true,
 	"char": true,
+	code: true,
 	charCode: true,
 	key: true,
 	keyCode: true,
@@ -5528,6 +8962,33 @@ jQuery.each( {
 		return event.which;
 	}
 }, jQuery.event.addProp );
+
+jQuery.each( { focus: "focusin", blur: "focusout" }, function( type, delegateType ) {
+	jQuery.event.special[ type ] = {
+
+		// Utilize native event if possible so blur/focus sequence is correct
+		setup: function() {
+
+			// Claim the first handler
+			// dataPriv.set( this, "focus", ... )
+			// dataPriv.set( this, "blur", ... )
+			leverageNative( this, type, expectSync );
+
+			// Return false to allow normal processing in the caller
+			return false;
+		},
+		trigger: function() {
+
+			// Force setup before trigger
+			leverageNative( this, type );
+
+			// Return non-false to allow normal event-path propagation
+			return true;
+		},
+
+		delegateType: delegateType
+	};
+} );
 
 // Create mouseenter/leave events using mouseover/out and event-time checks
 // so that event delegation works in jQuery.
@@ -5621,14 +9082,13 @@ var
 
 	/* eslint-enable */
 
-	// Support: IE <=10 - 11, Edge 12 - 13
+	// Support: IE <=10 - 11, Edge 12 - 13 only
 	// In IE/Edge using regex groups here causes severe slowdowns.
 	// See https://connect.microsoft.com/IE/feedback/details/1736512/
 	rnoInnerhtml = /<script|<style|<link/i,
 
 	// checked="checked" or checked
 	rchecked = /checked\s*(?:[^=]|=\s*.checked.)/i,
-	rscriptTypeMasked = /^true\/(.*)/,
 	rcleanScript = /^\s*<!(?:\[CDATA\[|--)|(?:\]\]|--)>\s*$/g;
 
 // Prefer a tbody over its parent table for containing new rows
@@ -5636,7 +9096,7 @@ function manipulationTarget( elem, content ) {
 	if ( nodeName( elem, "table" ) &&
 		nodeName( content.nodeType !== 11 ? content : content.firstChild, "tr" ) ) {
 
-		return jQuery( ">tbody", elem )[ 0 ] || elem;
+		return jQuery( elem ).children( "tbody" )[ 0 ] || elem;
 	}
 
 	return elem;
@@ -5648,10 +9108,8 @@ function disableScript( elem ) {
 	return elem;
 }
 function restoreScript( elem ) {
-	var match = rscriptTypeMasked.exec( elem.type );
-
-	if ( match ) {
-		elem.type = match[ 1 ];
+	if ( ( elem.type || "" ).slice( 0, 5 ) === "true/" ) {
+		elem.type = elem.type.slice( 5 );
 	} else {
 		elem.removeAttribute( "type" );
 	}
@@ -5717,15 +9175,15 @@ function domManip( collection, args, callback, ignored ) {
 		l = collection.length,
 		iNoClone = l - 1,
 		value = args[ 0 ],
-		isFunction = jQuery.isFunction( value );
+		valueIsFunction = isFunction( value );
 
 	// We can't cloneNode fragments that contain checked, in WebKit
-	if ( isFunction ||
+	if ( valueIsFunction ||
 			( l > 1 && typeof value === "string" &&
 				!support.checkClone && rchecked.test( value ) ) ) {
 		return collection.each( function( index ) {
 			var self = collection.eq( index );
-			if ( isFunction ) {
+			if ( valueIsFunction ) {
 				args[ 0 ] = value.call( this, index, self.html() );
 			}
 			domManip( self, args, callback, ignored );
@@ -5779,14 +9237,16 @@ function domManip( collection, args, callback, ignored ) {
 						!dataPriv.access( node, "globalEval" ) &&
 						jQuery.contains( doc, node ) ) {
 
-						if ( node.src ) {
+						if ( node.src && ( node.type || "" ).toLowerCase()  !== "module" ) {
 
 							// Optional AJAX dependency, but won't run scripts if not present
-							if ( jQuery._evalUrl ) {
-								jQuery._evalUrl( node.src );
+							if ( jQuery._evalUrl && !node.noModule ) {
+								jQuery._evalUrl( node.src, {
+									nonce: node.nonce || node.getAttribute( "nonce" )
+								} );
 							}
 						} else {
-							DOMEval( node.textContent.replace( rcleanScript, "" ), doc );
+							DOMEval( node.textContent.replace( rcleanScript, "" ), node, doc );
 						}
 					}
 				}
@@ -5808,7 +9268,7 @@ function remove( elem, selector, keepData ) {
 		}
 
 		if ( node.parentNode ) {
-			if ( keepData && jQuery.contains( node.ownerDocument, node ) ) {
+			if ( keepData && isAttached( node ) ) {
 				setGlobalEval( getAll( node, "script" ) );
 			}
 			node.parentNode.removeChild( node );
@@ -5826,7 +9286,7 @@ jQuery.extend( {
 	clone: function( elem, dataAndEvents, deepDataAndEvents ) {
 		var i, l, srcElements, destElements,
 			clone = elem.cloneNode( true ),
-			inPage = jQuery.contains( elem.ownerDocument, elem );
+			inPage = isAttached( elem );
 
 		// Fix IE cloning issues
 		if ( !support.noCloneChecked && ( elem.nodeType === 1 || elem.nodeType === 11 ) &&
@@ -6066,8 +9526,6 @@ jQuery.each( {
 		return this.pushStack( ret );
 	};
 } );
-var rmargin = ( /^margin/ );
-
 var rnumnonpx = new RegExp( "^(" + pnum + ")(?!px)[a-z%]+$", "i" );
 
 var getStyles = function( elem ) {
@@ -6084,6 +9542,8 @@ var getStyles = function( elem ) {
 		return view.getComputedStyle( elem );
 	};
 
+var rboxStyle = new RegExp( cssExpand.join( "|" ), "i" );
+
 
 
 ( function() {
@@ -6097,25 +9557,35 @@ var getStyles = function( elem ) {
 			return;
 		}
 
+		container.style.cssText = "position:absolute;left:-11111px;width:60px;" +
+			"margin-top:1px;padding:0;border:0";
 		div.style.cssText =
-			"box-sizing:border-box;" +
-			"position:relative;display:block;" +
+			"position:relative;display:block;box-sizing:border-box;overflow:scroll;" +
 			"margin:auto;border:1px;padding:1px;" +
-			"top:1%;width:50%";
-		div.innerHTML = "";
-		documentElement.appendChild( container );
+			"width:60%;top:1%";
+		documentElement.appendChild( container ).appendChild( div );
 
 		var divStyle = window.getComputedStyle( div );
 		pixelPositionVal = divStyle.top !== "1%";
 
 		// Support: Android 4.0 - 4.3 only, Firefox <=3 - 44
-		reliableMarginLeftVal = divStyle.marginLeft === "2px";
-		boxSizingReliableVal = divStyle.width === "4px";
+		reliableMarginLeftVal = roundPixelMeasures( divStyle.marginLeft ) === 12;
 
-		// Support: Android 4.0 - 4.3 only
+		// Support: Android 4.0 - 4.3 only, Safari <=9.1 - 10.1, iOS <=7.0 - 9.3
 		// Some styles come back with percentage values, even though they shouldn't
-		div.style.marginRight = "50%";
-		pixelMarginRightVal = divStyle.marginRight === "4px";
+		div.style.right = "60%";
+		pixelBoxStylesVal = roundPixelMeasures( divStyle.right ) === 36;
+
+		// Support: IE 9 - 11 only
+		// Detect misreporting of content dimensions for box-sizing:border-box elements
+		boxSizingReliableVal = roundPixelMeasures( divStyle.width ) === 36;
+
+		// Support: IE 9 only
+		// Detect overflow:scroll screwiness (gh-3699)
+		// Support: Chrome <=64
+		// Don't get tricked when zoom affects offsetWidth (gh-4029)
+		div.style.position = "absolute";
+		scrollboxSizeVal = roundPixelMeasures( div.offsetWidth / 3 ) === 12;
 
 		documentElement.removeChild( container );
 
@@ -6124,7 +9594,12 @@ var getStyles = function( elem ) {
 		div = null;
 	}
 
-	var pixelPositionVal, boxSizingReliableVal, pixelMarginRightVal, reliableMarginLeftVal,
+	function roundPixelMeasures( measure ) {
+		return Math.round( parseFloat( measure ) );
+	}
+
+	var pixelPositionVal, boxSizingReliableVal, scrollboxSizeVal, pixelBoxStylesVal,
+		reliableMarginLeftVal,
 		container = document.createElement( "div" ),
 		div = document.createElement( "div" );
 
@@ -6139,26 +9614,26 @@ var getStyles = function( elem ) {
 	div.cloneNode( true ).style.backgroundClip = "";
 	support.clearCloneStyle = div.style.backgroundClip === "content-box";
 
-	container.style.cssText = "border:0;width:8px;height:0;top:0;left:-9999px;" +
-		"padding:0;margin-top:1px;position:absolute";
-	container.appendChild( div );
-
 	jQuery.extend( support, {
-		pixelPosition: function() {
-			computeStyleTests();
-			return pixelPositionVal;
-		},
 		boxSizingReliable: function() {
 			computeStyleTests();
 			return boxSizingReliableVal;
 		},
-		pixelMarginRight: function() {
+		pixelBoxStyles: function() {
 			computeStyleTests();
-			return pixelMarginRightVal;
+			return pixelBoxStylesVal;
+		},
+		pixelPosition: function() {
+			computeStyleTests();
+			return pixelPositionVal;
 		},
 		reliableMarginLeft: function() {
 			computeStyleTests();
 			return reliableMarginLeftVal;
+		},
+		scrollboxSize: function() {
+			computeStyleTests();
+			return scrollboxSizeVal;
 		}
 	} );
 } )();
@@ -6181,7 +9656,7 @@ function curCSS( elem, name, computed ) {
 	if ( computed ) {
 		ret = computed.getPropertyValue( name ) || computed[ name ];
 
-		if ( ret === "" && !jQuery.contains( elem.ownerDocument, elem ) ) {
+		if ( ret === "" && !isAttached( elem ) ) {
 			ret = jQuery.style( elem, name );
 		}
 
@@ -6190,7 +9665,7 @@ function curCSS( elem, name, computed ) {
 		// but width seems to be reliably pixels.
 		// This is against the CSSOM draft spec:
 		// https://drafts.csswg.org/cssom/#resolved-values
-		if ( !support.pixelMarginRight() && rnumnonpx.test( ret ) && rmargin.test( name ) ) {
+		if ( !support.pixelBoxStyles() && rnumnonpx.test( ret ) && rboxStyle.test( name ) ) {
 
 			// Remember the original values
 			width = style.width;
@@ -6237,29 +9712,12 @@ function addGetHookIf( conditionFn, hookFn ) {
 }
 
 
-var
+var cssPrefixes = [ "Webkit", "Moz", "ms" ],
+	emptyStyle = document.createElement( "div" ).style,
+	vendorProps = {};
 
-	// Swappable if display is none or starts with table
-	// except "table", "table-cell", or "table-caption"
-	// See here for display values: https://developer.mozilla.org/en-US/docs/CSS/display
-	rdisplayswap = /^(none|table(?!-c[ea]).+)/,
-	rcustomProp = /^--/,
-	cssShow = { position: "absolute", visibility: "hidden", display: "block" },
-	cssNormalTransform = {
-		letterSpacing: "0",
-		fontWeight: "400"
-	},
-
-	cssPrefixes = [ "Webkit", "Moz", "ms" ],
-	emptyStyle = document.createElement( "div" ).style;
-
-// Return a css property mapped to a potentially vendor prefixed property
+// Return a vendor-prefixed property or undefined
 function vendorPropName( name ) {
-
-	// Shortcut for names that are not vendor prefixed
-	if ( name in emptyStyle ) {
-		return name;
-	}
 
 	// Check for vendor prefixed names
 	var capName = name[ 0 ].toUpperCase() + name.slice( 1 ),
@@ -6273,15 +9731,32 @@ function vendorPropName( name ) {
 	}
 }
 
-// Return a property mapped along what jQuery.cssProps suggests or to
-// a vendor prefixed property.
+// Return a potentially-mapped jQuery.cssProps or vendor prefixed property
 function finalPropName( name ) {
-	var ret = jQuery.cssProps[ name ];
-	if ( !ret ) {
-		ret = jQuery.cssProps[ name ] = vendorPropName( name ) || name;
+	var final = jQuery.cssProps[ name ] || vendorProps[ name ];
+
+	if ( final ) {
+		return final;
 	}
-	return ret;
+	if ( name in emptyStyle ) {
+		return name;
+	}
+	return vendorProps[ name ] = vendorPropName( name ) || name;
 }
+
+
+var
+
+	// Swappable if display is none or starts with table
+	// except "table", "table-cell", or "table-caption"
+	// See here for display values: https://developer.mozilla.org/en-US/docs/CSS/display
+	rdisplayswap = /^(none|table(?!-c[ea]).+)/,
+	rcustomProp = /^--/,
+	cssShow = { position: "absolute", visibility: "hidden", display: "block" },
+	cssNormalTransform = {
+		letterSpacing: "0",
+		fontWeight: "400"
+	};
 
 function setPositiveNumber( elem, value, subtract ) {
 
@@ -6295,87 +9770,137 @@ function setPositiveNumber( elem, value, subtract ) {
 		value;
 }
 
-function augmentWidthOrHeight( elem, name, extra, isBorderBox, styles ) {
-	var i,
-		val = 0;
+function boxModelAdjustment( elem, dimension, box, isBorderBox, styles, computedVal ) {
+	var i = dimension === "width" ? 1 : 0,
+		extra = 0,
+		delta = 0;
 
-	// If we already have the right measurement, avoid augmentation
-	if ( extra === ( isBorderBox ? "border" : "content" ) ) {
-		i = 4;
-
-	// Otherwise initialize for horizontal or vertical properties
-	} else {
-		i = name === "width" ? 1 : 0;
+	// Adjustment may not be necessary
+	if ( box === ( isBorderBox ? "border" : "content" ) ) {
+		return 0;
 	}
 
 	for ( ; i < 4; i += 2 ) {
 
-		// Both box models exclude margin, so add it if we want it
-		if ( extra === "margin" ) {
-			val += jQuery.css( elem, extra + cssExpand[ i ], true, styles );
+		// Both box models exclude margin
+		if ( box === "margin" ) {
+			delta += jQuery.css( elem, box + cssExpand[ i ], true, styles );
 		}
 
-		if ( isBorderBox ) {
+		// If we get here with a content-box, we're seeking "padding" or "border" or "margin"
+		if ( !isBorderBox ) {
 
-			// border-box includes padding, so remove it if we want content
-			if ( extra === "content" ) {
-				val -= jQuery.css( elem, "padding" + cssExpand[ i ], true, styles );
+			// Add padding
+			delta += jQuery.css( elem, "padding" + cssExpand[ i ], true, styles );
+
+			// For "border" or "margin", add border
+			if ( box !== "padding" ) {
+				delta += jQuery.css( elem, "border" + cssExpand[ i ] + "Width", true, styles );
+
+			// But still keep track of it otherwise
+			} else {
+				extra += jQuery.css( elem, "border" + cssExpand[ i ] + "Width", true, styles );
 			}
 
-			// At this point, extra isn't border nor margin, so remove border
-			if ( extra !== "margin" ) {
-				val -= jQuery.css( elem, "border" + cssExpand[ i ] + "Width", true, styles );
-			}
+		// If we get here with a border-box (content + padding + border), we're seeking "content" or
+		// "padding" or "margin"
 		} else {
 
-			// At this point, extra isn't content, so add padding
-			val += jQuery.css( elem, "padding" + cssExpand[ i ], true, styles );
+			// For "content", subtract padding
+			if ( box === "content" ) {
+				delta -= jQuery.css( elem, "padding" + cssExpand[ i ], true, styles );
+			}
 
-			// At this point, extra isn't content nor padding, so add border
-			if ( extra !== "padding" ) {
-				val += jQuery.css( elem, "border" + cssExpand[ i ] + "Width", true, styles );
+			// For "content" or "padding", subtract border
+			if ( box !== "margin" ) {
+				delta -= jQuery.css( elem, "border" + cssExpand[ i ] + "Width", true, styles );
 			}
 		}
 	}
 
-	return val;
+	// Account for positive content-box scroll gutter when requested by providing computedVal
+	if ( !isBorderBox && computedVal >= 0 ) {
+
+		// offsetWidth/offsetHeight is a rounded sum of content, padding, scroll gutter, and border
+		// Assuming integer scroll gutter, subtract the rest and round down
+		delta += Math.max( 0, Math.ceil(
+			elem[ "offset" + dimension[ 0 ].toUpperCase() + dimension.slice( 1 ) ] -
+			computedVal -
+			delta -
+			extra -
+			0.5
+
+		// If offsetWidth/offsetHeight is unknown, then we can't determine content-box scroll gutter
+		// Use an explicit zero to avoid NaN (gh-3964)
+		) ) || 0;
+	}
+
+	return delta;
 }
 
-function getWidthOrHeight( elem, name, extra ) {
+function getWidthOrHeight( elem, dimension, extra ) {
 
 	// Start with computed style
-	var valueIsBorderBox,
-		styles = getStyles( elem ),
-		val = curCSS( elem, name, styles ),
+	var styles = getStyles( elem ),
+
+		// To avoid forcing a reflow, only fetch boxSizing if we need it (gh-4322).
+		// Fake content-box until we know it's needed to know the true value.
+		boxSizingNeeded = !support.boxSizingReliable() || extra,
+		isBorderBox = boxSizingNeeded &&
+			jQuery.css( elem, "boxSizing", false, styles ) === "border-box",
+		valueIsBorderBox = isBorderBox,
+
+		val = curCSS( elem, dimension, styles ),
+		offsetProp = "offset" + dimension[ 0 ].toUpperCase() + dimension.slice( 1 );
+
+	// Support: Firefox <=54
+	// Return a confounding non-pixel value or feign ignorance, as appropriate.
+	if ( rnumnonpx.test( val ) ) {
+		if ( !extra ) {
+			return val;
+		}
+		val = "auto";
+	}
+
+
+	// Fall back to offsetWidth/offsetHeight when value is "auto"
+	// This happens for inline elements with no explicit setting (gh-3571)
+	// Support: Android <=4.1 - 4.3 only
+	// Also use offsetWidth/offsetHeight for misreported inline dimensions (gh-3602)
+	// Support: IE 9-11 only
+	// Also use offsetWidth/offsetHeight for when box sizing is unreliable
+	// We use getClientRects() to check for hidden/disconnected.
+	// In those cases, the computed value can be trusted to be border-box
+	if ( ( !support.boxSizingReliable() && isBorderBox ||
+		val === "auto" ||
+		!parseFloat( val ) && jQuery.css( elem, "display", false, styles ) === "inline" ) &&
+		elem.getClientRects().length ) {
+
 		isBorderBox = jQuery.css( elem, "boxSizing", false, styles ) === "border-box";
 
-	// Computed unit is not pixels. Stop here and return.
-	if ( rnumnonpx.test( val ) ) {
-		return val;
+		// Where available, offsetWidth/offsetHeight approximate border box dimensions.
+		// Where not available (e.g., SVG), assume unreliable box-sizing and interpret the
+		// retrieved value as a content box dimension.
+		valueIsBorderBox = offsetProp in elem;
+		if ( valueIsBorderBox ) {
+			val = elem[ offsetProp ];
+		}
 	}
 
-	// Check for style in case a browser which returns unreliable values
-	// for getComputedStyle silently falls back to the reliable elem.style
-	valueIsBorderBox = isBorderBox &&
-		( support.boxSizingReliable() || val === elem.style[ name ] );
-
-	// Fall back to offsetWidth/Height when value is "auto"
-	// This happens for inline elements with no explicit setting (gh-3571)
-	if ( val === "auto" ) {
-		val = elem[ "offset" + name[ 0 ].toUpperCase() + name.slice( 1 ) ];
-	}
-
-	// Normalize "", auto, and prepare for extra
+	// Normalize "" and auto
 	val = parseFloat( val ) || 0;
 
-	// Use the active box-sizing model to add/subtract irrelevant styles
+	// Adjust for the element's box model
 	return ( val +
-		augmentWidthOrHeight(
+		boxModelAdjustment(
 			elem,
-			name,
+			dimension,
 			extra || ( isBorderBox ? "border" : "content" ),
 			valueIsBorderBox,
-			styles
+			styles,
+
+			// Provide the current computed size to request scroll gutter calculation (gh-3589)
+			val
 		)
 	) + "px";
 }
@@ -6405,6 +9930,13 @@ jQuery.extend( {
 		"flexGrow": true,
 		"flexShrink": true,
 		"fontWeight": true,
+		"gridArea": true,
+		"gridColumn": true,
+		"gridColumnEnd": true,
+		"gridColumnStart": true,
+		"gridRow": true,
+		"gridRowEnd": true,
+		"gridRowStart": true,
 		"lineHeight": true,
 		"opacity": true,
 		"order": true,
@@ -6416,9 +9948,7 @@ jQuery.extend( {
 
 	// Add in properties whose names you wish to fix before
 	// setting or getting the value
-	cssProps: {
-		"float": "cssFloat"
-	},
+	cssProps: {},
 
 	// Get and set the style property on a DOM Node
 	style: function( elem, name, value, extra ) {
@@ -6430,7 +9960,7 @@ jQuery.extend( {
 
 		// Make sure that we're working with the right name
 		var ret, type, hooks,
-			origName = jQuery.camelCase( name ),
+			origName = camelCase( name ),
 			isCustomProp = rcustomProp.test( name ),
 			style = elem.style;
 
@@ -6462,7 +9992,9 @@ jQuery.extend( {
 			}
 
 			// If a number was passed in, add the unit (except for certain CSS properties)
-			if ( type === "number" ) {
+			// The isCustomProp check can be removed in jQuery 4.0 when we only auto-append
+			// "px" to a few hardcoded values.
+			if ( type === "number" && !isCustomProp ) {
 				value += ret && ret[ 3 ] || ( jQuery.cssNumber[ origName ] ? "" : "px" );
 			}
 
@@ -6498,7 +10030,7 @@ jQuery.extend( {
 
 	css: function( elem, name, extra, styles ) {
 		var val, num, hooks,
-			origName = jQuery.camelCase( name ),
+			origName = camelCase( name ),
 			isCustomProp = rcustomProp.test( name );
 
 		// Make sure that we're working with the right name. We don't
@@ -6536,8 +10068,8 @@ jQuery.extend( {
 	}
 } );
 
-jQuery.each( [ "height", "width" ], function( i, name ) {
-	jQuery.cssHooks[ name ] = {
+jQuery.each( [ "height", "width" ], function( i, dimension ) {
+	jQuery.cssHooks[ dimension ] = {
 		get: function( elem, computed, extra ) {
 			if ( computed ) {
 
@@ -6553,29 +10085,52 @@ jQuery.each( [ "height", "width" ], function( i, name ) {
 					// in IE throws an error.
 					( !elem.getClientRects().length || !elem.getBoundingClientRect().width ) ?
 						swap( elem, cssShow, function() {
-							return getWidthOrHeight( elem, name, extra );
+							return getWidthOrHeight( elem, dimension, extra );
 						} ) :
-						getWidthOrHeight( elem, name, extra );
+						getWidthOrHeight( elem, dimension, extra );
 			}
 		},
 
 		set: function( elem, value, extra ) {
 			var matches,
-				styles = extra && getStyles( elem ),
-				subtract = extra && augmentWidthOrHeight(
-					elem,
-					name,
-					extra,
+				styles = getStyles( elem ),
+
+				// Only read styles.position if the test has a chance to fail
+				// to avoid forcing a reflow.
+				scrollboxSizeBuggy = !support.scrollboxSize() &&
+					styles.position === "absolute",
+
+				// To avoid forcing a reflow, only fetch boxSizing if we need it (gh-3991)
+				boxSizingNeeded = scrollboxSizeBuggy || extra,
+				isBorderBox = boxSizingNeeded &&
 					jQuery.css( elem, "boxSizing", false, styles ) === "border-box",
-					styles
+				subtract = extra ?
+					boxModelAdjustment(
+						elem,
+						dimension,
+						extra,
+						isBorderBox,
+						styles
+					) :
+					0;
+
+			// Account for unreliable border-box dimensions by comparing offset* to computed and
+			// faking a content-box to get border and padding (gh-3699)
+			if ( isBorderBox && scrollboxSizeBuggy ) {
+				subtract -= Math.ceil(
+					elem[ "offset" + dimension[ 0 ].toUpperCase() + dimension.slice( 1 ) ] -
+					parseFloat( styles[ dimension ] ) -
+					boxModelAdjustment( elem, dimension, "border", false, styles ) -
+					0.5
 				);
+			}
 
 			// Convert to pixels if value adjustment is needed
 			if ( subtract && ( matches = rcssNum.exec( value ) ) &&
 				( matches[ 3 ] || "px" ) !== "px" ) {
 
-				elem.style[ name ] = value;
-				value = jQuery.css( elem, name );
+				elem.style[ dimension ] = value;
+				value = jQuery.css( elem, dimension );
 			}
 
 			return setPositiveNumber( elem, value, subtract );
@@ -6619,7 +10174,7 @@ jQuery.each( {
 		}
 	};
 
-	if ( !rmargin.test( prefix ) ) {
+	if ( prefix !== "margin" ) {
 		jQuery.cssHooks[ prefix + suffix ].set = setPositiveNumber;
 	}
 } );
@@ -6729,9 +10284,9 @@ Tween.propHooks = {
 			// Use .style if available and use plain properties where available.
 			if ( jQuery.fx.step[ tween.prop ] ) {
 				jQuery.fx.step[ tween.prop ]( tween );
-			} else if ( tween.elem.nodeType === 1 &&
-				( tween.elem.style[ jQuery.cssProps[ tween.prop ] ] != null ||
-					jQuery.cssHooks[ tween.prop ] ) ) {
+			} else if ( tween.elem.nodeType === 1 && (
+					jQuery.cssHooks[ tween.prop ] ||
+					tween.elem.style[ finalPropName( tween.prop ) ] != null ) ) {
 				jQuery.style( tween.elem, tween.prop, tween.now + tween.unit );
 			} else {
 				tween.elem[ tween.prop ] = tween.now;
@@ -6790,7 +10345,7 @@ function createFxNow() {
 	window.setTimeout( function() {
 		fxNow = undefined;
 	} );
-	return ( fxNow = jQuery.now() );
+	return ( fxNow = Date.now() );
 }
 
 // Generate parameters to create a standard animation
@@ -6894,9 +10449,10 @@ function defaultPrefilter( elem, props, opts ) {
 	// Restrict "overflow" and "display" styles during box animations
 	if ( isBox && elem.nodeType === 1 ) {
 
-		// Support: IE <=9 - 11, Edge 12 - 13
+		// Support: IE <=9 - 11, Edge 12 - 15
 		// Record all 3 overflow attributes because IE does not infer the shorthand
-		// from identically-valued overflowX and overflowY
+		// from identically-valued overflowX and overflowY and Edge just mirrors
+		// the overflowX value there.
 		opts.overflow = [ style.overflow, style.overflowX, style.overflowY ];
 
 		// Identify a display type, preferring old show/hide data over the CSS cascade
@@ -7004,7 +10560,7 @@ function propFilter( props, specialEasing ) {
 
 	// camelCase, specialEasing and expand cssHook pass
 	for ( index in props ) {
-		name = jQuery.camelCase( index );
+		name = camelCase( index );
 		easing = specialEasing[ name ];
 		value = props[ index ];
 		if ( Array.isArray( value ) ) {
@@ -7129,9 +10685,9 @@ function Animation( elem, properties, options ) {
 	for ( ; index < length; index++ ) {
 		result = Animation.prefilters[ index ].call( animation, elem, props, animation.opts );
 		if ( result ) {
-			if ( jQuery.isFunction( result.stop ) ) {
+			if ( isFunction( result.stop ) ) {
 				jQuery._queueHooks( animation.elem, animation.opts.queue ).stop =
-					jQuery.proxy( result.stop, result );
+					result.stop.bind( result );
 			}
 			return result;
 		}
@@ -7139,7 +10695,7 @@ function Animation( elem, properties, options ) {
 
 	jQuery.map( props, createTween, animation );
 
-	if ( jQuery.isFunction( animation.opts.start ) ) {
+	if ( isFunction( animation.opts.start ) ) {
 		animation.opts.start.call( elem, animation );
 	}
 
@@ -7172,7 +10728,7 @@ jQuery.Animation = jQuery.extend( Animation, {
 	},
 
 	tweener: function( props, callback ) {
-		if ( jQuery.isFunction( props ) ) {
+		if ( isFunction( props ) ) {
 			callback = props;
 			props = [ "*" ];
 		} else {
@@ -7204,9 +10760,9 @@ jQuery.Animation = jQuery.extend( Animation, {
 jQuery.speed = function( speed, easing, fn ) {
 	var opt = speed && typeof speed === "object" ? jQuery.extend( {}, speed ) : {
 		complete: fn || !fn && easing ||
-			jQuery.isFunction( speed ) && speed,
+			isFunction( speed ) && speed,
 		duration: speed,
-		easing: fn && easing || easing && !jQuery.isFunction( easing ) && easing
+		easing: fn && easing || easing && !isFunction( easing ) && easing
 	};
 
 	// Go to the end state if fx are off
@@ -7233,7 +10789,7 @@ jQuery.speed = function( speed, easing, fn ) {
 	opt.old = opt.complete;
 
 	opt.complete = function() {
-		if ( jQuery.isFunction( opt.old ) ) {
+		if ( isFunction( opt.old ) ) {
 			opt.old.call( this );
 		}
 
@@ -7397,7 +10953,7 @@ jQuery.fx.tick = function() {
 		i = 0,
 		timers = jQuery.timers;
 
-	fxNow = jQuery.now();
+	fxNow = Date.now();
 
 	for ( ; i < timers.length; i++ ) {
 		timer = timers[ i ];
@@ -7750,7 +11306,7 @@ jQuery.each( [
 
 
 	// Strip and collapse whitespace according to HTML spec
-	// https://html.spec.whatwg.org/multipage/infrastructure.html#strip-and-collapse-whitespace
+	// https://infra.spec.whatwg.org/#strip-and-collapse-ascii-whitespace
 	function stripAndCollapse( value ) {
 		var tokens = value.match( rnothtmlwhite ) || [];
 		return tokens.join( " " );
@@ -7761,20 +11317,30 @@ function getClass( elem ) {
 	return elem.getAttribute && elem.getAttribute( "class" ) || "";
 }
 
+function classesToArray( value ) {
+	if ( Array.isArray( value ) ) {
+		return value;
+	}
+	if ( typeof value === "string" ) {
+		return value.match( rnothtmlwhite ) || [];
+	}
+	return [];
+}
+
 jQuery.fn.extend( {
 	addClass: function( value ) {
 		var classes, elem, cur, curValue, clazz, j, finalValue,
 			i = 0;
 
-		if ( jQuery.isFunction( value ) ) {
+		if ( isFunction( value ) ) {
 			return this.each( function( j ) {
 				jQuery( this ).addClass( value.call( this, j, getClass( this ) ) );
 			} );
 		}
 
-		if ( typeof value === "string" && value ) {
-			classes = value.match( rnothtmlwhite ) || [];
+		classes = classesToArray( value );
 
+		if ( classes.length ) {
 			while ( ( elem = this[ i++ ] ) ) {
 				curValue = getClass( elem );
 				cur = elem.nodeType === 1 && ( " " + stripAndCollapse( curValue ) + " " );
@@ -7803,7 +11369,7 @@ jQuery.fn.extend( {
 		var classes, elem, cur, curValue, clazz, j, finalValue,
 			i = 0;
 
-		if ( jQuery.isFunction( value ) ) {
+		if ( isFunction( value ) ) {
 			return this.each( function( j ) {
 				jQuery( this ).removeClass( value.call( this, j, getClass( this ) ) );
 			} );
@@ -7813,9 +11379,9 @@ jQuery.fn.extend( {
 			return this.attr( "class", "" );
 		}
 
-		if ( typeof value === "string" && value ) {
-			classes = value.match( rnothtmlwhite ) || [];
+		classes = classesToArray( value );
 
+		if ( classes.length ) {
 			while ( ( elem = this[ i++ ] ) ) {
 				curValue = getClass( elem );
 
@@ -7845,13 +11411,14 @@ jQuery.fn.extend( {
 	},
 
 	toggleClass: function( value, stateVal ) {
-		var type = typeof value;
+		var type = typeof value,
+			isValidValue = type === "string" || Array.isArray( value );
 
-		if ( typeof stateVal === "boolean" && type === "string" ) {
+		if ( typeof stateVal === "boolean" && isValidValue ) {
 			return stateVal ? this.addClass( value ) : this.removeClass( value );
 		}
 
-		if ( jQuery.isFunction( value ) ) {
+		if ( isFunction( value ) ) {
 			return this.each( function( i ) {
 				jQuery( this ).toggleClass(
 					value.call( this, i, getClass( this ), stateVal ),
@@ -7863,12 +11430,12 @@ jQuery.fn.extend( {
 		return this.each( function() {
 			var className, i, self, classNames;
 
-			if ( type === "string" ) {
+			if ( isValidValue ) {
 
 				// Toggle individual class names
 				i = 0;
 				self = jQuery( this );
-				classNames = value.match( rnothtmlwhite ) || [];
+				classNames = classesToArray( value );
 
 				while ( ( className = classNames[ i++ ] ) ) {
 
@@ -7927,7 +11494,7 @@ var rreturn = /\r/g;
 
 jQuery.fn.extend( {
 	val: function( value ) {
-		var hooks, ret, isFunction,
+		var hooks, ret, valueIsFunction,
 			elem = this[ 0 ];
 
 		if ( !arguments.length ) {
@@ -7956,7 +11523,7 @@ jQuery.fn.extend( {
 			return;
 		}
 
-		isFunction = jQuery.isFunction( value );
+		valueIsFunction = isFunction( value );
 
 		return this.each( function( i ) {
 			var val;
@@ -7965,7 +11532,7 @@ jQuery.fn.extend( {
 				return;
 			}
 
-			if ( isFunction ) {
+			if ( valueIsFunction ) {
 				val = value.call( this, i, jQuery( this ).val() );
 			} else {
 				val = value;
@@ -8107,18 +11674,24 @@ jQuery.each( [ "radio", "checkbox" ], function() {
 // Return jQuery for attributes-only inclusion
 
 
-var rfocusMorph = /^(?:focusinfocus|focusoutblur)$/;
+support.focusin = "onfocusin" in window;
+
+
+var rfocusMorph = /^(?:focusinfocus|focusoutblur)$/,
+	stopPropagationCallback = function( e ) {
+		e.stopPropagation();
+	};
 
 jQuery.extend( jQuery.event, {
 
 	trigger: function( event, data, elem, onlyHandlers ) {
 
-		var i, cur, tmp, bubbleType, ontype, handle, special,
+		var i, cur, tmp, bubbleType, ontype, handle, special, lastElement,
 			eventPath = [ elem || document ],
 			type = hasOwn.call( event, "type" ) ? event.type : event,
 			namespaces = hasOwn.call( event, "namespace" ) ? event.namespace.split( "." ) : [];
 
-		cur = tmp = elem = elem || document;
+		cur = lastElement = tmp = elem = elem || document;
 
 		// Don't do events on text and comment nodes
 		if ( elem.nodeType === 3 || elem.nodeType === 8 ) {
@@ -8170,7 +11743,7 @@ jQuery.extend( jQuery.event, {
 
 		// Determine event propagation path in advance, per W3C events spec (#9951)
 		// Bubble up to document, then to window; watch for a global ownerDocument var (#9724)
-		if ( !onlyHandlers && !special.noBubble && !jQuery.isWindow( elem ) ) {
+		if ( !onlyHandlers && !special.noBubble && !isWindow( elem ) ) {
 
 			bubbleType = special.delegateType || type;
 			if ( !rfocusMorph.test( bubbleType + type ) ) {
@@ -8190,7 +11763,7 @@ jQuery.extend( jQuery.event, {
 		// Fire handlers on the event path
 		i = 0;
 		while ( ( cur = eventPath[ i++ ] ) && !event.isPropagationStopped() ) {
-
+			lastElement = cur;
 			event.type = i > 1 ?
 				bubbleType :
 				special.bindType || type;
@@ -8222,7 +11795,7 @@ jQuery.extend( jQuery.event, {
 
 				// Call a native DOM method on the target with the same name as the event.
 				// Don't do default actions on window, that's where global variables be (#6170)
-				if ( ontype && jQuery.isFunction( elem[ type ] ) && !jQuery.isWindow( elem ) ) {
+				if ( ontype && isFunction( elem[ type ] ) && !isWindow( elem ) ) {
 
 					// Don't re-trigger an onFOO event when we call its FOO() method
 					tmp = elem[ ontype ];
@@ -8233,7 +11806,17 @@ jQuery.extend( jQuery.event, {
 
 					// Prevent re-triggering of the same event, since we already bubbled it above
 					jQuery.event.triggered = type;
+
+					if ( event.isPropagationStopped() ) {
+						lastElement.addEventListener( type, stopPropagationCallback );
+					}
+
 					elem[ type ]();
+
+					if ( event.isPropagationStopped() ) {
+						lastElement.removeEventListener( type, stopPropagationCallback );
+					}
+
 					jQuery.event.triggered = undefined;
 
 					if ( tmp ) {
@@ -8279,31 +11862,6 @@ jQuery.fn.extend( {
 } );
 
 
-jQuery.each( ( "blur focus focusin focusout resize scroll click dblclick " +
-	"mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave " +
-	"change select submit keydown keypress keyup contextmenu" ).split( " " ),
-	function( i, name ) {
-
-	// Handle event binding
-	jQuery.fn[ name ] = function( data, fn ) {
-		return arguments.length > 0 ?
-			this.on( name, null, data, fn ) :
-			this.trigger( name );
-	};
-} );
-
-jQuery.fn.extend( {
-	hover: function( fnOver, fnOut ) {
-		return this.mouseenter( fnOver ).mouseleave( fnOut || fnOver );
-	}
-} );
-
-
-
-
-support.focusin = "onfocusin" in window;
-
-
 // Support: Firefox <=44
 // Firefox doesn't have focus(in | out) events
 // Related ticket - https://bugzilla.mozilla.org/show_bug.cgi?id=687787
@@ -8347,7 +11905,7 @@ if ( !support.focusin ) {
 }
 var location = window.location;
 
-var nonce = jQuery.now();
+var nonce = Date.now();
 
 var rquery = ( /\?/ );
 
@@ -8405,7 +11963,7 @@ function buildParams( prefix, obj, traditional, add ) {
 			}
 		} );
 
-	} else if ( !traditional && jQuery.type( obj ) === "object" ) {
+	} else if ( !traditional && toType( obj ) === "object" ) {
 
 		// Serialize object item.
 		for ( name in obj ) {
@@ -8427,13 +11985,17 @@ jQuery.param = function( a, traditional ) {
 		add = function( key, valueOrFunction ) {
 
 			// If value is a function, invoke it and use its return value
-			var value = jQuery.isFunction( valueOrFunction ) ?
+			var value = isFunction( valueOrFunction ) ?
 				valueOrFunction() :
 				valueOrFunction;
 
 			s[ s.length ] = encodeURIComponent( key ) + "=" +
 				encodeURIComponent( value == null ? "" : value );
 		};
+
+	if ( a == null ) {
+		return "";
+	}
 
 	// If an array was passed in, assume that it is an array of form elements.
 	if ( Array.isArray( a ) || ( a.jquery && !jQuery.isPlainObject( a ) ) ) {
@@ -8545,7 +12107,7 @@ function addToPrefiltersOrTransports( structure ) {
 			i = 0,
 			dataTypes = dataTypeExpression.toLowerCase().match( rnothtmlwhite ) || [];
 
-		if ( jQuery.isFunction( func ) ) {
+		if ( isFunction( func ) ) {
 
 			// For each dataType in the dataTypeExpression
 			while ( ( dataType = dataTypes[ i++ ] ) ) {
@@ -8937,12 +12499,14 @@ jQuery.extend( {
 						if ( !responseHeaders ) {
 							responseHeaders = {};
 							while ( ( match = rheaders.exec( responseHeadersString ) ) ) {
-								responseHeaders[ match[ 1 ].toLowerCase() ] = match[ 2 ];
+								responseHeaders[ match[ 1 ].toLowerCase() + " " ] =
+									( responseHeaders[ match[ 1 ].toLowerCase() + " " ] || [] )
+										.concat( match[ 2 ] );
 							}
 						}
-						match = responseHeaders[ key.toLowerCase() ];
+						match = responseHeaders[ key.toLowerCase() + " " ];
 					}
-					return match == null ? null : match;
+					return match == null ? null : match.join( ", " );
 				},
 
 				// Raw string
@@ -9017,7 +12581,7 @@ jQuery.extend( {
 		if ( s.crossDomain == null ) {
 			urlAnchor = document.createElement( "a" );
 
-			// Support: IE <=8 - 11, Edge 12 - 13
+			// Support: IE <=8 - 11, Edge 12 - 15
 			// IE throws exception on accessing the href property if url is malformed,
 			// e.g. http://example.com:80x/
 			try {
@@ -9075,8 +12639,8 @@ jQuery.extend( {
 			// Remember the hash so we can put it back
 			uncached = s.url.slice( cacheURL.length );
 
-			// If data is available, append data to url
-			if ( s.data ) {
+			// If data is available and should be processed, append data to url
+			if ( s.data && ( s.processData || typeof s.data === "string" ) ) {
 				cacheURL += ( rquery.test( cacheURL ) ? "&" : "?" ) + s.data;
 
 				// #9682: remove data so that it's not used in an eventual retry
@@ -9313,7 +12877,7 @@ jQuery.each( [ "get", "post" ], function( i, method ) {
 	jQuery[ method ] = function( url, data, callback, type ) {
 
 		// Shift arguments if data argument was omitted
-		if ( jQuery.isFunction( data ) ) {
+		if ( isFunction( data ) ) {
 			type = type || callback;
 			callback = data;
 			data = undefined;
@@ -9331,7 +12895,7 @@ jQuery.each( [ "get", "post" ], function( i, method ) {
 } );
 
 
-jQuery._evalUrl = function( url ) {
+jQuery._evalUrl = function( url, options ) {
 	return jQuery.ajax( {
 		url: url,
 
@@ -9341,7 +12905,16 @@ jQuery._evalUrl = function( url ) {
 		cache: true,
 		async: false,
 		global: false,
-		"throws": true
+
+		// Only evaluate the response if it is successful (gh-4126)
+		// dataFilter is not invoked for failure responses, so using it instead
+		// of the default converter is kludgy but it works.
+		converters: {
+			"text script": function() {}
+		},
+		dataFilter: function( response ) {
+			jQuery.globalEval( response, options );
+		}
 	} );
 };
 
@@ -9351,7 +12924,7 @@ jQuery.fn.extend( {
 		var wrap;
 
 		if ( this[ 0 ] ) {
-			if ( jQuery.isFunction( html ) ) {
+			if ( isFunction( html ) ) {
 				html = html.call( this[ 0 ] );
 			}
 
@@ -9377,7 +12950,7 @@ jQuery.fn.extend( {
 	},
 
 	wrapInner: function( html ) {
-		if ( jQuery.isFunction( html ) ) {
+		if ( isFunction( html ) ) {
 			return this.each( function( i ) {
 				jQuery( this ).wrapInner( html.call( this, i ) );
 			} );
@@ -9397,10 +12970,10 @@ jQuery.fn.extend( {
 	},
 
 	wrap: function( html ) {
-		var isFunction = jQuery.isFunction( html );
+		var htmlIsFunction = isFunction( html );
 
 		return this.each( function( i ) {
-			jQuery( this ).wrapAll( isFunction ? html.call( this, i ) : html );
+			jQuery( this ).wrapAll( htmlIsFunction ? html.call( this, i ) : html );
 		} );
 	},
 
@@ -9492,7 +13065,8 @@ jQuery.ajaxTransport( function( options ) {
 					return function() {
 						if ( callback ) {
 							callback = errorCallback = xhr.onload =
-								xhr.onerror = xhr.onabort = xhr.onreadystatechange = null;
+								xhr.onerror = xhr.onabort = xhr.ontimeout =
+									xhr.onreadystatechange = null;
 
 							if ( type === "abort" ) {
 								xhr.abort();
@@ -9532,7 +13106,7 @@ jQuery.ajaxTransport( function( options ) {
 
 				// Listen to events
 				xhr.onload = callback();
-				errorCallback = xhr.onerror = callback( "error" );
+				errorCallback = xhr.onerror = xhr.ontimeout = callback( "error" );
 
 				// Support: IE 9 only
 				// Use onreadystatechange to replace onabort
@@ -9623,24 +13197,21 @@ jQuery.ajaxPrefilter( "script", function( s ) {
 // Bind script tag hack transport
 jQuery.ajaxTransport( "script", function( s ) {
 
-	// This transport only deals with cross domain requests
-	if ( s.crossDomain ) {
+	// This transport only deals with cross domain or forced-by-attrs requests
+	if ( s.crossDomain || s.scriptAttrs ) {
 		var script, callback;
 		return {
 			send: function( _, complete ) {
-				script = jQuery( "<script>" ).prop( {
-					charset: s.scriptCharset,
-					src: s.url
-				} ).on(
-					"load error",
-					callback = function( evt ) {
+				script = jQuery( "<script>" )
+					.attr( s.scriptAttrs || {} )
+					.prop( { charset: s.scriptCharset, src: s.url } )
+					.on( "load error", callback = function( evt ) {
 						script.remove();
 						callback = null;
 						if ( evt ) {
 							complete( evt.type === "error" ? 404 : 200, evt.type );
 						}
-					}
-				);
+					} );
 
 				// Use native DOM manipulation to avoid our domManip AJAX trickery
 				document.head.appendChild( script[ 0 ] );
@@ -9686,7 +13257,7 @@ jQuery.ajaxPrefilter( "json jsonp", function( s, originalSettings, jqXHR ) {
 	if ( jsonProp || s.dataTypes[ 0 ] === "jsonp" ) {
 
 		// Get callback name, remembering preexisting value associated with it
-		callbackName = s.jsonpCallback = jQuery.isFunction( s.jsonpCallback ) ?
+		callbackName = s.jsonpCallback = isFunction( s.jsonpCallback ) ?
 			s.jsonpCallback() :
 			s.jsonpCallback;
 
@@ -9737,7 +13308,7 @@ jQuery.ajaxPrefilter( "json jsonp", function( s, originalSettings, jqXHR ) {
 			}
 
 			// Call if it was a function and we have a response
-			if ( responseContainer && jQuery.isFunction( overwritten ) ) {
+			if ( responseContainer && isFunction( overwritten ) ) {
 				overwritten( responseContainer[ 0 ] );
 			}
 
@@ -9829,7 +13400,7 @@ jQuery.fn.load = function( url, params, callback ) {
 	}
 
 	// If it's a function
-	if ( jQuery.isFunction( params ) ) {
+	if ( isFunction( params ) ) {
 
 		// We assume that it's the callback
 		callback = params;
@@ -9937,7 +13508,7 @@ jQuery.offset = {
 			curLeft = parseFloat( curCSSLeft ) || 0;
 		}
 
-		if ( jQuery.isFunction( options ) ) {
+		if ( isFunction( options ) ) {
 
 			// Use jQuery.extend here to allow modification of coordinates argument (gh-1848)
 			options = options.call( elem, i, jQuery.extend( {}, curOffset ) );
@@ -9960,6 +13531,8 @@ jQuery.offset = {
 };
 
 jQuery.fn.extend( {
+
+	// offset() relates an element's border box to the document origin
 	offset: function( options ) {
 
 		// Preserve chaining for setter
@@ -9971,7 +13544,7 @@ jQuery.fn.extend( {
 				} );
 		}
 
-		var doc, docElem, rect, win,
+		var rect, win,
 			elem = this[ 0 ];
 
 		if ( !elem ) {
@@ -9986,50 +13559,52 @@ jQuery.fn.extend( {
 			return { top: 0, left: 0 };
 		}
 
+		// Get document-relative position by adding viewport scroll to viewport-relative gBCR
 		rect = elem.getBoundingClientRect();
-
-		doc = elem.ownerDocument;
-		docElem = doc.documentElement;
-		win = doc.defaultView;
-
+		win = elem.ownerDocument.defaultView;
 		return {
-			top: rect.top + win.pageYOffset - docElem.clientTop,
-			left: rect.left + win.pageXOffset - docElem.clientLeft
+			top: rect.top + win.pageYOffset,
+			left: rect.left + win.pageXOffset
 		};
 	},
 
+	// position() relates an element's margin box to its offset parent's padding box
+	// This corresponds to the behavior of CSS absolute positioning
 	position: function() {
 		if ( !this[ 0 ] ) {
 			return;
 		}
 
-		var offsetParent, offset,
+		var offsetParent, offset, doc,
 			elem = this[ 0 ],
 			parentOffset = { top: 0, left: 0 };
 
-		// Fixed elements are offset from window (parentOffset = {top:0, left: 0},
-		// because it is its only offset parent
+		// position:fixed elements are offset from the viewport, which itself always has zero offset
 		if ( jQuery.css( elem, "position" ) === "fixed" ) {
 
-			// Assume getBoundingClientRect is there when computed position is fixed
+			// Assume position:fixed implies availability of getBoundingClientRect
 			offset = elem.getBoundingClientRect();
 
 		} else {
-
-			// Get *real* offsetParent
-			offsetParent = this.offsetParent();
-
-			// Get correct offsets
 			offset = this.offset();
-			if ( !nodeName( offsetParent[ 0 ], "html" ) ) {
-				parentOffset = offsetParent.offset();
-			}
 
-			// Add offsetParent borders
-			parentOffset = {
-				top: parentOffset.top + jQuery.css( offsetParent[ 0 ], "borderTopWidth", true ),
-				left: parentOffset.left + jQuery.css( offsetParent[ 0 ], "borderLeftWidth", true )
-			};
+			// Account for the *real* offset parent, which can be the document or its root element
+			// when a statically positioned element is identified
+			doc = elem.ownerDocument;
+			offsetParent = elem.offsetParent || doc.documentElement;
+			while ( offsetParent &&
+				( offsetParent === doc.body || offsetParent === doc.documentElement ) &&
+				jQuery.css( offsetParent, "position" ) === "static" ) {
+
+				offsetParent = offsetParent.parentNode;
+			}
+			if ( offsetParent && offsetParent !== elem && offsetParent.nodeType === 1 ) {
+
+				// Incorporate borders into its offset, since they are outside its content origin
+				parentOffset = jQuery( offsetParent ).offset();
+				parentOffset.top += jQuery.css( offsetParent, "borderTopWidth", true );
+				parentOffset.left += jQuery.css( offsetParent, "borderLeftWidth", true );
+			}
 		}
 
 		// Subtract parent offsets and element margins
@@ -10071,7 +13646,7 @@ jQuery.each( { scrollLeft: "pageXOffset", scrollTop: "pageYOffset" }, function( 
 
 			// Coalesce documents and windows
 			var win;
-			if ( jQuery.isWindow( elem ) ) {
+			if ( isWindow( elem ) ) {
 				win = elem;
 			} else if ( elem.nodeType === 9 ) {
 				win = elem.defaultView;
@@ -10129,7 +13704,7 @@ jQuery.each( { Height: "height", Width: "width" }, function( name, type ) {
 			return access( this, function( elem, type, value ) {
 				var doc;
 
-				if ( jQuery.isWindow( elem ) ) {
+				if ( isWindow( elem ) ) {
 
 					// $( window ).outerWidth/Height return w/h including scrollbars (gh-1729)
 					return funcName.indexOf( "outer" ) === 0 ?
@@ -10163,6 +13738,28 @@ jQuery.each( { Height: "height", Width: "width" }, function( name, type ) {
 } );
 
 
+jQuery.each( ( "blur focus focusin focusout resize scroll click dblclick " +
+	"mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave " +
+	"change select submit keydown keypress keyup contextmenu" ).split( " " ),
+	function( i, name ) {
+
+	// Handle event binding
+	jQuery.fn[ name ] = function( data, fn ) {
+		return arguments.length > 0 ?
+			this.on( name, null, data, fn ) :
+			this.trigger( name );
+	};
+} );
+
+jQuery.fn.extend( {
+	hover: function( fnOver, fnOut ) {
+		return this.mouseenter( fnOver ).mouseleave( fnOut || fnOver );
+	}
+} );
+
+
+
+
 jQuery.fn.extend( {
 
 	bind: function( types, data, fn ) {
@@ -10184,6 +13781,37 @@ jQuery.fn.extend( {
 	}
 } );
 
+// Bind a function to a context, optionally partially applying any
+// arguments.
+// jQuery.proxy is deprecated to promote standards (specifically Function#bind)
+// However, it is not slated for removal any time soon
+jQuery.proxy = function( fn, context ) {
+	var tmp, args, proxy;
+
+	if ( typeof context === "string" ) {
+		tmp = fn[ context ];
+		context = fn;
+		fn = tmp;
+	}
+
+	// Quick check to determine if target is callable, in the spec
+	// this throws a TypeError, but we will just return undefined.
+	if ( !isFunction( fn ) ) {
+		return undefined;
+	}
+
+	// Simulated bind
+	args = slice.call( arguments, 2 );
+	proxy = function() {
+		return fn.apply( context || this, args.concat( slice.call( arguments ) ) );
+	};
+
+	// Set the guid of unique handler to the same of original handler, so it can be removed
+	proxy.guid = fn.guid = fn.guid || jQuery.guid++;
+
+	return proxy;
+};
+
 jQuery.holdReady = function( hold ) {
 	if ( hold ) {
 		jQuery.readyWait++;
@@ -10194,6 +13822,26 @@ jQuery.holdReady = function( hold ) {
 jQuery.isArray = Array.isArray;
 jQuery.parseJSON = JSON.parse;
 jQuery.nodeName = nodeName;
+jQuery.isFunction = isFunction;
+jQuery.isWindow = isWindow;
+jQuery.camelCase = camelCase;
+jQuery.type = toType;
+
+jQuery.now = Date.now;
+
+jQuery.isNumeric = function( obj ) {
+
+	// As of jQuery 3.0, isNumeric is limited to
+	// strings and numbers (primitives or objects)
+	// that can be coerced to finite numbers (gh-2662)
+	var type = jQuery.type( obj );
+	return ( type === "number" || type === "string" ) &&
+
+		// parseFloat NaNs numeric-cast false positives ("")
+		// ...but misinterprets leading-number strings, particularly hex literals ("0x...")
+		// subtraction forces infinities to NaN
+		!isNaN( obj - parseFloat( obj ) );
+};
 
 
 
@@ -10253,7 +13901,7 @@ if ( !noGlobal ) {
 return jQuery;
 } );
 
-},{}],2:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 
 module.exports = tableify;
@@ -10384,7 +14032,7 @@ function getClass(obj) {
         ;
 }
 
-},{}],3:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 /*! tablesorter (FORK) - updated 07-11-2016 (v2.26.6)*/
 /* Includes widgets ( storage,uitheme,columns,filter,stickyHeaders,resizable,saveSort ) */
 (function(factory) {
@@ -16100,3278 +19748,4 @@ function getClass(obj) {
 return $.tablesorter;
 }));
 
-},{"jquery":1}],4:[function(require,module,exports){
-var Analyzer;
-
-module.exports = Analyzer = class Analyzer {
-  constructor() {}
-
-  analyze(net) {
-    var aspect_ratios, d, dilation, dim_in, failed, feature_map, group, has_bias, i, infered_dim, isglobal, j, k, kernel, kernel_h, kernel_w, key, l, layertype, len, len1, len2, len3, mem, mode, module, n, n_elements, newshape, num_inputs, num_ops, num_priors, num_region_proposals, numout, op, ops, p, pad_h, pad_w, params, parent, parent2, permutation, pooltype, power, prod_in_dims, prod_out_dims, ref, ref1, ref10, ref11, ref12, ref13, ref14, ref15, ref16, ref17, ref18, ref19, ref2, ref20, ref21, ref22, ref23, ref24, ref25, ref26, ref27, ref28, ref29, ref3, ref30, ref31, ref32, ref33, ref34, ref35, ref36, ref37, ref38, ref39, ref4, ref40, ref41, ref42, ref43, ref44, ref45, ref46, ref47, ref48, ref49, ref5, ref50, ref51, ref52, ref53, ref54, ref55, ref56, ref6, ref7, ref8, ref9, roi_proposals, scale, settings, shape, shift, size, stride_h, stride_w, summary, trivial_layers, val;
-    ref = net.sortTopologically();
-    //# Add Input/Output Dimensions + Channels to each Node / Layer
-    // shape.dim: (    N   x   K   x   W   x   H   )
-    //              batch   channel  width   height
-    //               chIn    chOut   wIn     wOut
-    for (i = 0, len = ref.length; i < len; i++) {
-      n = ref[i];
-      layertype = n.type.toLowerCase();
-      // Setup Default Values for Analysis
-      d = n.analysis;
-      d.wIn = d.hIn = d.wOut = d.hOut = d.chIn = d.chOut = 0;
-      d.comp = {
-        macc: 0,
-        comp: 0,
-        add: 0,
-        div: 0,
-        exp: 0
-      };
-      d.mem = {
-        activation: 0,
-        param: 0
-      };
-      d.variants = [];
-      parent = (ref1 = n.parents[0]) != null ? ref1.analysis : void 0;
-      // Setup default channels + dimensions: inherited from parent
-      d.batchOut = d.batchIn = parent != null ? parent.batchOut : void 0;
-      d.wIn = parent != null ? parent.wOut : void 0;
-      d.hIn = parent != null ? parent.hOut : void 0;
-      d.chIn = parent != null ? parent.chOut : void 0;
-      switch (layertype) {
-        case "data":
-        case "input":
-          //dimensions
-          if (((ref2 = n.attribs.input_param) != null ? ref2.shape : void 0) != null) {
-            shape = n.attribs.input_param.shape;
-            d.batchIn = shape.dim[0];
-            d.chIn = shape.dim[1];
-            d.hIn = shape.dim[2];
-            d.wIn = shape.dim[3];
-          } else if (((ref3 = n.attribs.transform_param) != null ? ref3.crop_size : void 0) != null) {
-            d.wIn = d.hIn = n.attribs.transform_param.crop_size;
-            d.chIn = 3; // assume RGB
-            d.batchOut = 1;
-          } else {
-            onerror('Unknown Input Dimensions');
-            debugger;
-          }
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          d.batchOut = d.batchIn;
-          //computation
-          //-- none
-          //memory
-          //-- none
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "convolution":
-          //dimensions
-          params = n.attribs.convolution_param;
-          kernel_w = (ref4 = params.kernel_w) != null ? ref4 : params.kernel_size;
-          kernel_h = (ref5 = params.kernel_h) != null ? ref5 : params.kernel_size;
-          stride_w = (ref6 = params.stride_w) != null ? ref6 : (ref7 = params.stride) != null ? ref7 : 1;
-          stride_h = (ref8 = params.stride_h) != null ? ref8 : (ref9 = params.stride) != null ? ref9 : 1;
-          pad_w = (ref10 = params.pad_w) != null ? ref10 : (ref11 = params.pad) != null ? ref11 : 0;
-          pad_h = (ref12 = params.pad_h) != null ? ref12 : (ref13 = params.pad) != null ? ref13 : 0;
-          numout = params.num_output;
-          group = (ref14 = params.group) != null ? ref14 : 1;
-          dilation = (ref15 = params.dilation) != null ? ref15 : 1;
-          has_bias = ((ref16 = params.bias_term) != null ? ref16 : "true") === "false" ? 0 : 1;
-          // according to http://caffe.berkeleyvision.org/tutorial/layers.html and https://github.com/BVLC/caffe/issues/3656
-          kernel = dilation * (kernel_w - 1) + 1;
-          d.wOut = Math.floor((d.wIn + 2 * pad_w - kernel) / stride_w) + 1;
-          kernel = dilation * (kernel_h - 1) + 1;
-          d.hOut = Math.floor((d.hIn + 2 * pad_h - kernel) / stride_h) + 1;
-          d.chOut = numout;
-          //computation
-          d.comp.macc = (kernel_w * kernel_h) * (d.wOut * d.hOut) * d.chIn * d.chOut * d.batchOut / group;
-          //memory
-          d.mem.param = (kernel_w * kernel_h) * d.chIn * d.chOut / group + has_bias * d.chOut;
-          d.mem.activation = (d.wOut * d.hOut) * d.chOut * d.batchOut;
-          // CACHE AND BANDWIDTH for Implementation Variants
-          if (do_variants_analysis) {
-            d.variants.push({
-              name: "complete outputs, input cache",
-              cache: d.chIn * kernel_h * d.wIn + d.chIn * kernel_h * kernel_w, // line buffers // param cache
-              readBW: d.chOut * d.chIn * (d.wIn * d.hIn),
-              writeBW: d.chOut * (d.wOut * d.hOut), // ideal
-              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
-            });
-            d.variants.push({
-              name: "complete inputs, input cache",
-              cache: kernel_h * d.wIn + d.chIn * kernel_h * kernel_w, // line buffers // param cache
-              readBW: d.chIn * ((d.chOut + 1) * (d.wIn * d.hIn)),
-              writeBW: d.chIn * (d.chOut * (d.wOut * d.hOut)),
-              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
-            });
-            d.variants.push({
-              name: "complete inputs, input + output cache",
-              cache: kernel_h * d.wIn + d.chIn * kernel_h * kernel_w + d.wIn * d.hIn * d.chOut, // line buffers // param cache // output cache
-              readBW: d.chIn * (d.wIn * d.hIn), // ideal
-              writeBW: d.chOut * (d.wOut * d.hOut), // ideal
-              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
-            });
-            d.variants.push({
-              name: "streaming, input cache",
-              cache: d.chIn * kernel_h * d.wIn,
-              readBW: d.chIn * (d.wIn * d.hIn),
-              writeBW: d.chOut * (d.wOut * d.hOut),
-              confBW: d.hIn * (d.chIn * d.chOut * (kernel_w * kernel_h))
-            });
-            d.variants.push({
-              name: "streaming, input + config cache",
-              cache: d.chIn * kernel_h * d.wIn + d.chIn * d.chOut * (kernel_h * kernel_w),
-              readBW: d.chIn * (d.wIn * d.hIn),
-              writeBW: d.chOut * (d.wOut * d.hOut),
-              confBW: d.chOut * d.chIn * kernel_w * kernel_h // ideal
-            });
-            d.variants.push({
-              name: "streaming, temp.",
-              img_cache: kernel_h > 1 ? d.chIn * kernel_h * d.wIn : d.chIn,
-              img_dim: d.chIn + "ch ∙ " + d.wIn + " × " + kernel_h + " × 32b",
-              flt_cache: d.chIn * d.chOut * (kernel_h * kernel_w),
-              squeeze_cache: n.name.indexOf("squeeze") > -1 ? d.chOut * d.wOut * d.hOut : ""
-            });
-          }
-          break;
-        case "innerproduct":
-        case "inner_product":
-          //dimensions
-          numout = n.attribs.inner_product_param.num_output;
-          has_bias = ((ref17 = n.attribs.inner_product_param.bias_term) != null ? ref17 : "true") === "false" ? 0 : 1;
-          d.wOut = 1;
-          d.hOut = 1;
-          d.chOut = numout;
-          //computation
-          d.comp.macc = (d.wIn * d.hIn) * d.chIn * d.chOut * d.batchOut;
-          //memory
-          d.mem.param = d.wIn * d.hIn * d.chIn * d.chOut + has_bias * d.chOut;
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "pooling":
-          //dimensions
-          params = n.attribs.pooling_param;
-          kernel_w = (ref18 = params.kernel_w) != null ? ref18 : params.kernel_size;
-          kernel_h = (ref19 = params.kernel_h) != null ? ref19 : params.kernel_size;
-          stride_w = (ref20 = params.stride_w) != null ? ref20 : (ref21 = params.stride) != null ? ref21 : 1;
-          stride_h = (ref22 = params.stride_h) != null ? ref22 : (ref23 = params.stride) != null ? ref23 : 1;
-          pad_w = (ref24 = params.pad_w) != null ? ref24 : (ref25 = params.pad) != null ? ref25 : 0;
-          pad_h = (ref26 = params.pad_h) != null ? ref26 : (ref27 = params.pad) != null ? ref27 : 0;
-          isglobal = (ref28 = params.global_pooling) != null ? ref28 : 0;
-          pooltype = ((ref29 = params.pool) != null ? ref29 : 'MAX').toUpperCase();
-          d.chOut = d.chIn;
-          // according to http://caffe.berkeleyvision.org/tutorial/layers.html and https://github.com/BVLC/caffe/issues/3656
-          d.wOut = Math.ceil((d.wIn + 2 * pad_w - kernel_w) / stride_w) + 1;
-          d.hOut = Math.ceil((d.hIn + 2 * pad_h - kernel_h) / stride_h) + 1;
-          if (isglobal) {
-            d.wOut = d.hOut = 1;
-          }
-          //computation
-          num_ops = isglobal ? (d.wIn * d.hIn) * d.chIn * d.batchOut : (d.wOut * d.hOut) * kernel_h * kernel_w * d.chOut * d.batchOut;
-          if (pooltype === 'MAX') {
-            d.comp.comp = num_ops;
-          } else if (pooltype === 'AVE') {
-            d.comp.add = num_ops;
-          } else {
-            //d.comp.div = (d.wOut*d.hOut*d.chOut) #divide by const.
-            onerror(`Unknown pooling type ${pooltype}`);
-          }
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "batchnorm":
-        case "bn":
-          //dimensions
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          //computation
-          // BN: subtract mean, divide by variance for each channel
-          // averages during training: over spatial dims + batch
-          d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
-          d.comp.div = d.wIn * d.hIn * d.chIn * d.batchOut;
-          //memory
-          d.mem.param = d.chIn * 2;
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "lrn":
-        case "normalize":
-          //dimensions
-          //default mode: ACROSS_CHANNELS
-          mode = (ref30 = (ref31 = n.attribs.lrn_param) != null ? ref31.norm_region : void 0) != null ? ref30 : 'ACROSS_CHANNELS';
-          size = (ref32 = (ref33 = n.attribs.lrn_param) != null ? ref33.local_size : void 0) != null ? ref32 : 1;
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          //computation
-          //  Each input value is divided by (1+(α/n)∑xi^2)^β
-          num_inputs = d.wIn * d.hIn * d.chIn * d.batchOut;
-          d.comp.macc = num_inputs * size; // (∑xi^2)
-          d.comp.add = num_inputs; // (1+...)
-          d.comp.exp = num_inputs; // (...)^β
-          d.comp.div = num_inputs * 2; // (α/n)*... + divide by sum
-          //memory
-          d.mem.param = 2; // alpha, beta
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "concat":
-          //dimensions
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          // sum up channels from inputs
-          d.chIn = 0;
-          ref34 = n.parents;
-          for (j = 0, len1 = ref34.length; j < len1; j++) {
-            p = ref34[j];
-            d.chIn += p.analysis.chOut;
-          }
-          d.chOut = d.chIn;
-          ref35 = n.parents;
-          for (k = 0, len2 = ref35.length; k < len2; k++) {
-            p = ref35[k];
-            // check input dimensions
-            failed = failed || (p.analysis.wOut !== d.wIn || p.analysis.hOut !== d.hIn);
-          }
-          if (failed) {
-            window.onerror('CONCAT: input dimensions dont agree!');
-          }
-          //computation
-          // --none
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        //relu/dropout use some memory, do some comparisons
-        case "relu":
-        case "relu6":
-        case "elu":
-        case "prelu":
-        case "dropout":
-          //dimensions
-          d.wIn = parent.wOut;
-          d.hIn = parent.hOut;
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn = parent.chOut;
-          //computation
-          d.comp.comp = d.wIn * d.hIn * d.chIn * d.batchOut;
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "softmax":
-        case "softmaxwithloss":
-        case "softmax_loss":
-          //dimensions
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          //computation
-          d.comp.exp = d.wIn * d.hIn * d.chIn * d.batchOut;
-          d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
-          d.comp.div = d.wIn * d.hIn * d.chIn * d.batchOut;
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "flatten":
-          //dimensions
-          d.wOut = d.hOut = 1;
-          d.chOut = d.chIn * d.wIn * d.hIn;
-          //computation
-          // --none
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "eltwise":
-          //dimensions
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          // check input dimensions
-          failed = false;
-          ref36 = n.parents;
-          for (l = 0, len3 = ref36.length; l < len3; l++) {
-            p = ref36[l];
-            failed = failed || (d.wIn !== p.analysis.wOut) || (d.hIn !== p.analysis.hOut);
-          }
-          if (failed) {
-            onerror('ELTWISE: input dimensions dont agree in ' + n.name);
-          }
-          //computation
-          op = (ref37 = (ref38 = n.eltwise_param) != null ? (ref39 = ref38.operation) != null ? ref39.toUpperCase() : void 0 : void 0) != null ? ref37 : 'SUM';
-          if (op === 'SUM') {
-            d.comp.add = d.wIn * d.hIn * d.chIn * d.batchOut;
-          } else if (op === 'MAX') {
-            d.comp.comp = d.wIn * d.hIn * d.chIn * d.batchOut;
-          } else if (op === 'PROD') {
-            d.comp.macc = d.wIn * d.hIn * d.chIn * d.batchOut;
-          } else {
-            onerror('ELTWISE: unknown operation ' + op);
-          }
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "deconvolution":
-          //dimensions
-          params = n.attribs.convolution_param;
-          kernel_w = (ref40 = params.kernel_w) != null ? ref40 : params.kernel_size;
-          kernel_h = (ref41 = params.kernel_h) != null ? ref41 : params.kernel_size;
-          stride_w = (ref42 = params.stride_w) != null ? ref42 : (ref43 = params.stride) != null ? ref43 : 1;
-          stride_h = (ref44 = params.stride_h) != null ? ref44 : (ref45 = params.stride) != null ? ref45 : 1;
-          pad_w = (ref46 = params.pad_w) != null ? ref46 : (ref47 = params.pad) != null ? ref47 : 0;
-          pad_h = (ref48 = params.pad_h) != null ? ref48 : (ref49 = params.pad) != null ? ref49 : 0;
-          numout = params.num_output;
-          d.wOut = stride_w * (d.wIn - 1) + kernel_w - 2 * pad_w;
-          d.hOut = stride_h * (d.hIn - 1) + kernel_h - 2 * pad_h;
-          d.chOut = numout;
-          //computation
-          d.comp.macc = d.chIn * d.chOut * d.wOut * d.hOut * (kernel_w / stride_w) * (kernel_h / stride_h) * d.batchOut;
-          //memory
-          d.mem.param = kernel_w * kernel_h * d.chIn * d.chOut;
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        case "crop":
-          //dimensions
-          //# crop to dims of 2nd parent
-          parent2 = n.parents[1].analysis;
-          d.wOut = parent2.wOut;
-          d.hOut = parent2.hOut;
-          d.chOut = d.chIn;
-          //computation
-          // --none
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        //scale layer use activation memory and does multiplies
-        case "scale":
-          //dimensions
-          //# assume pass-through
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          //computation: scale = multiplication
-          d.comp.macc = d.wOut * d.hOut * d.chOut * d.batchOut;
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          break;
-        //implicit layers use activation memory, but no computation
-        case "implicit":
-          //dimensions
-          //fix potentially undefined inputs
-          d.wIn = (ref50 = d.wIn) != null ? ref50 : "?";
-          d.hIn = (ref51 = d.hIn) != null ? ref51 : "?";
-          d.chIn = (ref52 = d.chIn) != null ? ref52 : "?";
-          d.batchIn = (ref53 = d.batchIn) != null ? ref53 : "?";
-          //# assume pass-through
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          d.batchOut = d.batchIn;
-          //computation
-          // --none
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          if (isNaN(d.mem.activation)) {
-            d.mem.activation = 0;
-          }
-          break;
-        // accuracy layers just pass through
-        case "accuracy":
-          //dimensions
-          //# assume pass-through
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          break;
-        //computation
-        // --none
-        //memory
-        // --none
-
-        // power layers: computes outputs y = (shift + scale * x) ^ power
-        case "power":
-          params = n.attribs.power_param;
-          power = (ref54 = params.power) != null ? ref54 : 1;
-          scale = (ref55 = params.scale) != null ? ref55 : 1;
-          shift = (ref56 = params.shift) != null ? ref56 : 0;
-          //dimensions: pass-through
-          d.wOut = d.wIn;
-          d.hOut = d.hIn;
-          d.chOut = d.chIn;
-          //computation
-          n_elements = d.wOut * d.hOut * d.chOut;
-          d.comp.macc = scale !== 1 ? n_elements : 0;
-          d.comp.add = shift !== 0 ? n_elements : 0;
-          d.comp.exp = power !== 1 ? n_elements : 0;
-          //memory
-          d.mem.activation = n_elements;
-          break;
-        // permute layers reorder the channels / dimensions
-        case "permute":
-          permutation = n.attribs.permute_param.order.slice(0); //copy array
-          //dimension order: [batch, channels, height, width] according to http://caffe.berkeleyvision.org/tutorial/layers.html
-          dim_in = [d.batchIn, d.chIn, d.hIn, d.wIn];
-          d.batchOut = dim_in[permutation[0]];
-          d.chOut = dim_in[permutation[1]];
-          d.hOut = dim_in[permutation[2]];
-          d.wOut = dim_in[permutation[3]];
-          break;
-        case "priorbox":
-          settings = n.attribs.prior_box_param;
-          aspect_ratios = settings.aspect_ratio;
-          num_priors = settings.min_size * settings.aspect_ratio;
-          if (settings.flip) {
-            num_priors *= 2;
-          }
-          d.batchOut = d.batchIn;
-          d.chOut = 2;
-          d.hOut = 4;
-          d.wOut = num_priors;
-          break;
-        //computation
-        // -- neglectable
-        //memory
-        // --neglectable
-
-        // reshape layers just permute dimensions, assume on-the-fly operation
-        case "reshape":
-          //get reshape parameters
-          newshape = n.attribs.reshape_param.shape.dim.slice(0); // copy array
-          //debugger
-          console.log(newshape);
-          if ((!newshape[0]) || (newshape[0] === 0)) {
-            newshape[0] = d.batchIn;
-          }
-          if ((!newshape[1]) || (newshape[1] === 0)) {
-            newshape[1] = d.chIn;
-          }
-          if ((!newshape[2]) || (newshape[2] === 0)) {
-            newshape[2] = d.hIn;
-          }
-          if ((!newshape[3]) || (newshape[3] === 0)) {
-            newshape[3] = d.wIn;
-          }
-          // -1 as dimension = infer from other dimensions, allowed for at most 1 dimension
-          prod_in_dims = d.batchIn * d.wIn * d.hIn * d.chIn;
-          prod_out_dims = newshape[0] * newshape[1] * newshape[2] * newshape[3] * (-1); // -1 compensates "-1" in newshape
-          infered_dim = prod_in_dims / prod_out_dims;
-          if (newshape[0] === -1) {
-            newshape[0] = infered_dim;
-          }
-          if (newshape[1] === -1) {
-            newshape[1] = infered_dim;
-          }
-          if (newshape[2] === -1) {
-            newshape[2] = infered_dim;
-          }
-          if (newshape[3] === -1) {
-            newshape[3] = infered_dim;
-          }
-          // assign output dimensions
-          d.batchOut = newshape[0];
-          d.chOut = newshape[1];
-          d.hOut = newshape[2];
-          d.wOut = newshape[3];
-          break;
-        //computation
-        // --none (some shifting-around only)
-        //memory
-        case "python":
-          module = n.attribs.python_param.module;
-          if (module === "rpn.proposal_layer") {
-            // ASSUME TEST.RPN_POST_NMS_TOP_N = 300
-            num_region_proposals = 300; // see RPN_POST_NMS_TOP_N in lib/fast_rcnn/config.py
-            
-            //output dimensions:
-            d.wOut = d.hOut = 1;
-            d.chOut = 5; // rectangle (x1, y1, x2, y2) (and image batch index n)
-            d.batchOut = num_region_proposals;
-            //computation
-            d.comp.div = (num_region_proposals * (num_region_proposals - 1)) / 2;
-            d.comp.macc = d.batchIn * (4 + 4) * 9 * (d.wIn * d.hIn) + 2 * d.comp.div;
-            d.comp.add = d.batchIn * (8 + 2) * 9 * (d.wIn * d.hIn) + 6 * d.comp.div;
-            d.comp.comp = d.batchIn * (4 + 2) * 9 * (d.wIn * d.hIn) + Math.pow(9 * (d.wIn * d.hIn), 2) + 7 * d.comp.div;
-            d.comp.exp = d.batchIn * 2 * 9 * (d.wIn * d.hIn);
-            //memory
-            d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut;
-          } else {
-            onerror('Unknown Python Layer: ' + module);
-            console.log(n);
-            debugger;
-          }
-          break;
-        case "roipooling":
-          // 2 parent layers: region proposals, feature vectors
-          roi_proposals = (n.parents[0].analysis.batchOut > 1) ? n.parents[0].analysis : n.parents[1].analysis; // parent with batchOut > 1 = region proposals
-          feature_map = (n.parents[0].analysis.batchOut > 1) ? n.parents[1].analysis : n.parents[0].analysis; // features = the other one
-          // Input / Output dimensions
-          d.chIn = d.chOut = feature_map.chIn;
-          d.hIn = feature_map.hIn;
-          d.wIn = feature_map.wIn;
-          d.hOut = n.attribs.roi_pooling_param.pooled_h;
-          d.wOut = n.attribs.roi_pooling_param.pooled_w;
-          d.batchIn = d.batchOut = roi_proposals.batchOut;
-          //spatial_scale = n.attribs.roi_pooling_param.spatial_scale
-          //computation
-          d.comp.add = d.batchOut;
-          d.comp.div = d.batchOut;
-          d.comp.macc = d.batchOut;
-          d.comp.comp = d.batchOut * d.chIn * d.wIn * d.hIn;
-          //memory
-          d.mem.activation = d.wOut * d.hOut * d.chOut * d.batchOut; // unknown layer;  print error message;
-          break;
-        default:
-          onerror('Unknown Layer: ' + layertype);
-          console.log(n);
-          debugger;
-      }
-      trivial_layers = ["softmax", "softmaxwithloss", "softmax_loss", "dropout", "concat", "accuracy"];
-      if (!($.inArray(layertype, trivial_layers) >= 0)) {
-        summary = {
-          in: `${d.chIn}ch ⋅ ${d.wIn}×${d.hIn} (×${d.batchIn})`,
-          out: `${d.chOut}ch ⋅ ${d.wOut}×${d.hOut} (×${d.batchOut})`
-        };
-        // concat number of required operations into string
-        ops = ((function() {
-          var ref57, results;
-          ref57 = d.comp;
-          results = [];
-          for (key in ref57) {
-            val = ref57[key];
-            if (val !== 0) {
-              results.push(val + '⋅' + key);
-            }
-          }
-          return results;
-        })()).join(', ');
-        if (ops !== "") {
-          //debugger
-          summary.ops = ops;
-        }
-        // concat memory requirements into string
-        mem = ((function() {
-          var ref57, results;
-          ref57 = d.mem;
-          results = [];
-          for (key in ref57) {
-            val = ref57[key];
-            if (val !== 0) {
-              results.push(val + '⋅' + key);
-            }
-          }
-          return results;
-        })()).join(', ');
-        if (mem !== "") {
-          summary.mem = mem;
-        }
-        // attach
-        _.extend(n.attribs, {
-          analysis: summary
-        });
-      }
-    }
-    return net;
-  }
-
-};
-
-
-},{}],5:[function(require,module,exports){
-var AppController, Editor, Renderer;
-
-Renderer = require('./renderer.coffee');
-
-Editor = require('./editor.coffee');
-
-module.exports = AppController = class AppController {
-  constructor() {
-    this.inProgress = false;
-    this.$spinner = $('#net-spinner');
-    this.$netBox = $('#net-container');
-    this.$netError = $('#net-error');
-    this.svg = '#net-svg';
-    this.$tableBox = $('#table-container');
-    this.table = '#table-content';
-    this.setupErrorHandler();
-  }
-
-  startLoading(loaderFunc, loader, ...args) {
-    if (this.inProgress) {
-      return;
-    }
-    this.$netError.hide();
-    this.$netBox.hide();
-    this.$tableBox.hide();
-    this.$spinner.show();
-    return loaderFunc(...args, (net) => {
-      return this.completeLoading(net, loader);
-    });
-  }
-
-  completeLoading(net, loader) {
-    var editlink, extendlink;
-    this.$spinner.hide();
-    $('#net-title').html(net.name.replace(/_/g, ' '));
-    $('title').text(net.name.replace(/_/g, ' ') + ' — Netscope CNN Analyzer');
-    editlink = $("<a>(edit)</a>").addClass("editlink");
-    editlink.appendTo($('#net-title'));
-    editlink.click(() => {
-      return this.showEditor(loader);
-    });
-    this.$netBox.show();
-    this.$tableBox.show();
-    $(this.svg).empty();
-    $('.qtip').remove();
-    this.renderer = new Renderer(net, this.svg, this.table);
-    if (!window.do_variants_analysis) {
-      $("<br>").appendTo(this.table);
-      extendlink = $('<a>Excel-compatible Analysis Results (experimental)</a>');
-      extendlink.click(() => {
-        window.do_variants_analysis = true;
-        return this.renderer.renderTable();
-      });
-      extendlink.appendTo(this.table);
-    }
-    return this.inProgress = false;
-  }
-
-  makeLoader(loaderFunc, loader) {
-    return (...args) => {
-      return this.startLoading(loaderFunc, loader, ...args);
-    };
-  }
-
-  showEditor(loader) {
-    // Display the editor by lazily loading CodeMirror.
-    // loader is an instance of a Loader.
-    if (_.isUndefined(window.CodeMirror)) {
-      return $.getScript('assets/js/lib/codemirror.min.js', () => {
-        return this.netEditor = new Editor(this.makeLoader(loader.load, loader), loader);
-      });
-    } else {
-      return this.netEditor.reload(loader.load, loader);
-    }
-  }
-
-  setupErrorHandler() {
-    return window.onerror = (message, filename, lineno, colno, e) => {
-      var msg;
-      msg = message;
-      if (!(_.isUndefined(e) || _.isUndefined(e.line) || _.isUndefined(e.column))) {
-        msg = _.template('Line ${line}, Column ${column}: ${message}')(e);
-      }
-      this.$spinner.hide();
-      $('.msg', this.$netError).html(msg);
-      this.$netError.show();
-      return this.inProgress = false;
-    };
-  }
-
-};
-
-
-},{"./editor.coffee":8,"./renderer.coffee":12}],6:[function(require,module,exports){
-var Analyzer, CaffeParser, Network, Parser, generateLayers, generateNetwork,
-  hasProp = {}.hasOwnProperty;
-
-Parser = require('./parser');
-
-Network = require('../network.coffee');
-
-Analyzer = require('../analyzer.coffee');
-
-generateLayers = function(descriptors, phase) {
-  var entry, headerKeys, j, layer, layerDesc, layers, len;
-  if (phase == null) {
-    phase = 'train';
-  }
-  layers = [];
-  for (j = 0, len = descriptors.length; j < len; j++) {
-    entry = descriptors[j];
-    // Support the deprecated Caffe 'layers' key as well.
-    layerDesc = entry.layer || entry.layers;
-    if (layerDesc != null) {
-      layer = {};
-      headerKeys = ['name', 'type', 'top', 'bottom'];
-      _.extend(layer, _.pick(layerDesc, headerKeys));
-      layer.attribs = _.omit(layerDesc, headerKeys);
-      layers.push(layer);
-    } else {
-      console.log('Unidentified entry ignored: ', entry);
-    }
-  }
-  layers = _.filter(layers, function(layer) {
-    var layerPhase, ref;
-    layerPhase = (ref = layer.attribs.include) != null ? ref.phase : void 0;
-    return !((layerPhase != null) && layerPhase !== phase);
-  });
-  return layers;
-};
-
-generateNetwork = function(layers, header) {
-  var children, curNode, dataNode, dims, getNodes, getSingleNode, i, implicitLayers, inplaceChild, inplaceOps, inplaceTable, input, inputs, j, k, l, layer, len, len1, len2, len3, m, n, net, node, nodeTable, ref;
-  nodeTable = {};
-  implicitLayers = [];
-  net = new Network(header.name);
-  getSingleNode = (name) => {
-    var node;
-    node = nodeTable[name];
-    // Caffe allows top to be a layer which isn't explicitly
-    // defined. Create an implicit layer if this is detected.
-    if (node == null) {
-      debugger;
-      node = net.createNode(name, 'implicit');
-      nodeTable[name] = node;
-    }
-    return node;
-  };
-  getNodes = (names, exclude) => {
-    names = [].concat(names);
-    if (exclude != null) {
-      _.pullAll(names, exclude);
-    }
-    return _.map(names, getSingleNode);
-  };
-  // Build the node LUT.
-  for (j = 0, len = layers.length; j < len; j++) {
-    layer = layers[j];
-    nodeTable[layer.name] = net.createNode(layer.name, layer.type, layer.attribs, {});
-  }
-  // Connect layers.
-  inplaceTable = {};
-  for (l = 0, len1 = layers.length; l < len1; l++) {
-    layer = layers[l];
-    node = nodeTable[layer.name];
-    if (layer.top != null) {
-      if (layer.top === layer.bottom) {
-        // This is an inplace node. We will treat this specially.
-        // Note that this would have otherwise introduced a cycle,
-        // violating the requirements of a DAG.
-        if (inplaceTable[layer.top] == null) {
-          inplaceTable[layer.top] = [];
-        }
-        inplaceTable[layer.top].push(node);
-        continue;
-      } else {
-        node.addChildren(getNodes(layer.top, [layer.name]));
-      }
-    }
-    if (layer.bottom != null) {
-      node.addParents(getNodes(layer.bottom, [].concat(layer.top)));
-    }
-  }
-  for (k in inplaceTable) {
-    if (!hasProp.call(inplaceTable, k)) continue;
-    inplaceOps = inplaceTable[k];
-    curNode = nodeTable[k];
-    curNode.coalesce = inplaceOps;
-    children = curNode.detachChildren();
-    for (m = 0, len2 = inplaceOps.length; m < len2; m++) {
-      inplaceChild = inplaceOps[m];
-      inplaceChild.annotation = 'InPlace';
-      curNode.addChild(inplaceChild);
-      curNode = inplaceChild;
-    }
-    curNode.addChildren(children);
-  }
-  // Patch in data layer parameters.
-  if (((header != null ? header.input : void 0) != null) && (((header != null ? header.input_dim : void 0) != null) || ((header != null ? (ref = header.input_shape) != null ? ref.dim : void 0 : void 0) != null))) {
-    inputs = [].concat(header.input);
-    dims = header.input_dim || header.input_shape.dim;
-    if (inputs.length === (dims.length * 0.25)) {
-      for (i = n = 0, len3 = inputs.length; n < len3; i = ++n) {
-        input = inputs[i];
-        dataNode = nodeTable[input];
-        dataNode.type = 'data';
-        dataNode.attribs.input_param = {
-          shape: {
-            dim: dims.slice(i * 4, (i + 1) * 4)
-          }
-        };
-      }
-    } else {
-      console.log('Inconsistent input dimensions.');
-    }
-  }
-  return net;
-};
-
-module.exports = CaffeParser = class CaffeParser {
-  static parse(txt, phase) {
-    var NetworkAnalyzer, header, layerDesc, layers, network;
-    [header, layerDesc] = Parser.parse(txt);
-    // if header is already a layer instead of a 'global header' with network name etc...:
-    if (header.layer) {
-      layerDesc.unshift(header);
-      header = {
-        name: 'Unnamed Network'
-      };
-    }
-    // extract input_shape field from layerDesc to header
-    if ((layerDesc[0].input_dim != null) || (layerDesc[0].input_shape != null)) {
-      _.extend(header, layerDesc[0]);
-    }
-    layers = generateLayers(layerDesc, phase);
-    network = generateNetwork(layers, header);
-    NetworkAnalyzer = new Analyzer();
-    network = NetworkAnalyzer.analyze(network);
-    return network;
-  }
-
-};
-
-
-},{"../analyzer.coffee":4,"../network.coffee":11,"./parser":7}],7:[function(require,module,exports){
-module.exports = (function() {
-  "use strict";
-
-  function peg$subclass(child, parent) {
-    function ctor() { this.constructor = child; }
-    ctor.prototype = parent.prototype;
-    child.prototype = new ctor();
-  }
-
-  function peg$SyntaxError(message, expected, found, location) {
-    this.message  = message;
-    this.expected = expected;
-    this.found    = found;
-    this.location = location;
-    this.name     = "SyntaxError";
-
-    if (typeof Error.captureStackTrace === "function") {
-      Error.captureStackTrace(this, peg$SyntaxError);
-    }
-  }
-
-  peg$subclass(peg$SyntaxError, Error);
-
-  function peg$parse(input) {
-    var options = arguments.length > 1 ? arguments[1] : {},
-        parser  = this,
-
-        peg$FAILED = {},
-
-        peg$startRuleFunctions = { Proto_text: peg$parseProto_text },
-        peg$startRuleFunction  = peg$parseProto_text,
-
-        peg$c0 = function(doc) { return doc; },
-        peg$c1 = { type: "other", description: "whitespace" },
-        peg$c2 = /^[ \t\n\r]/,
-        peg$c3 = { type: "class", value: "[ \\t\\n\\r]", description: "[ \\t\\n\\r]" },
-        peg$c4 = { type: "other", description: "whitespace or comment" },
-        peg$c5 = function(first, v) { return v; },
-        peg$c6 = { type: "other", description: "comment" },
-        peg$c7 = "#",
-        peg$c8 = { type: "literal", value: "#", description: "\"#\"" },
-        peg$c9 = { type: "any", description: "any character" },
-        peg$c10 = function(first, m) { return m; },
-        peg$c11 = function(first, rest) {
-              var result = {};
-              var kvPairs = [first].concat(rest);
-              for (var i = 0; i < kvPairs.length; i++)
-              {
-                var k = kvPairs[i].key;
-                var v = kvPairs[i].value;
-                if(k in result)
-                {
-                  result[k] = [].concat(result[k]);
-                  result[k].push(v);
-              }
-                else
-                {
-                  result[k] = v;
-                }
-              }
-              return result;
-          },
-        peg$c12 = ":",
-        peg$c13 = { type: "literal", value: ":", description: "\":\"" },
-        peg$c14 = function(key, value) {
-            return {key: key, value: value};
-          },
-        peg$c15 = "[",
-        peg$c16 = { type: "literal", value: "[", description: "\"[\"" },
-        peg$c17 = ",",
-        peg$c18 = { type: "literal", value: ",", description: "\",\"" },
-        peg$c19 = function(v) { return v; },
-        peg$c20 = "]",
-        peg$c21 = { type: "literal", value: "]", description: "\"]\"" },
-        peg$c22 = function(entries) {
-              return entries;
-            },
-        peg$c23 = "{",
-        peg$c24 = { type: "literal", value: "{", description: "\"{\"" },
-        peg$c25 = function(key, first, m) { return m; },
-        peg$c26 = "}",
-        peg$c27 = { type: "literal", value: "}", description: "\"}\"" },
-        peg$c28 = function(key, first, rest) {
-              var elems = [first].concat(rest);
-              var merged = {};
-              for (var i = 0; i < elems.length; ++i)
-              {
-                  for(var k in elems[i])
-                  {
-                      merged[k] = elems[i][k];
-                  }
-              }
-              var result = {};
-              result[key] = merged;
-              return result;
-            },
-        peg$c29 = { type: "other", description: "number" },
-        peg$c30 = function() { return parseFloat(text()); },
-        peg$c31 = /^[eE]/,
-        peg$c32 = { type: "class", value: "[eE]", description: "[eE]" },
-        peg$c33 = ".",
-        peg$c34 = { type: "literal", value: ".", description: "\".\"" },
-        peg$c35 = "0",
-        peg$c36 = { type: "literal", value: "0", description: "\"0\"" },
-        peg$c37 = /^[1-9]/,
-        peg$c38 = { type: "class", value: "[1-9]", description: "[1-9]" },
-        peg$c39 = "-",
-        peg$c40 = { type: "literal", value: "-", description: "\"-\"" },
-        peg$c41 = "+",
-        peg$c42 = { type: "literal", value: "+", description: "\"+\"" },
-        peg$c43 = "'",
-        peg$c44 = { type: "literal", value: "'", description: "\"'\"" },
-        peg$c45 = function(chars) { return chars.join(""); },
-        peg$c46 = "\"",
-        peg$c47 = { type: "literal", value: "\"", description: "\"\\\"\"" },
-        peg$c48 = { type: "other", description: "key" },
-        peg$c49 = /^[a-zA-Z0-9_\-]/,
-        peg$c50 = { type: "class", value: "[a-zA-Z0-9_-]", description: "[a-zA-Z0-9_-]" },
-        peg$c51 = function(chars) { return chars.join("").toLowerCase(); },
-        peg$c52 = { type: "other", description: "double-quoted string character" },
-        peg$c53 = /^[ -!#-[\]-\u10FFFF]/,
-        peg$c54 = { type: "class", value: "[\\x20-\\x21\\x23-\\x5B\\x5D-\\u10FFFF]", description: "[\\x20-\\x21\\x23-\\x5B\\x5D-\\u10FFFF]" },
-        peg$c55 = { type: "other", description: "single-quoted string character" },
-        peg$c56 = /^[ -&(-[\]-\u10FFFF]/,
-        peg$c57 = { type: "class", value: "[\\x20-\\x26\\x28-\\x5B\\x5D-\\u10FFFF]", description: "[\\x20-\\x26\\x28-\\x5B\\x5D-\\u10FFFF]" },
-        peg$c58 = { type: "other", description: "escaped character sequence" },
-        peg$c59 = "\\",
-        peg$c60 = { type: "literal", value: "\\", description: "\"\\\\\"" },
-        peg$c61 = "/",
-        peg$c62 = { type: "literal", value: "/", description: "\"/\"" },
-        peg$c63 = "b",
-        peg$c64 = { type: "literal", value: "b", description: "\"b\"" },
-        peg$c65 = function() { return "\b"; },
-        peg$c66 = "f",
-        peg$c67 = { type: "literal", value: "f", description: "\"f\"" },
-        peg$c68 = function() { return "\f"; },
-        peg$c69 = "n",
-        peg$c70 = { type: "literal", value: "n", description: "\"n\"" },
-        peg$c71 = function() { return "\n"; },
-        peg$c72 = "r",
-        peg$c73 = { type: "literal", value: "r", description: "\"r\"" },
-        peg$c74 = function() { return "\r"; },
-        peg$c75 = "t",
-        peg$c76 = { type: "literal", value: "t", description: "\"t\"" },
-        peg$c77 = function() { return "\t"; },
-        peg$c78 = "u",
-        peg$c79 = { type: "literal", value: "u", description: "\"u\"" },
-        peg$c80 = function(digits) {
-                return String.fromCharCode(parseInt(digits, 16));
-              },
-        peg$c81 = function(sequence) {
-            return sequence;
-          },
-        peg$c82 = /^[0-9]/,
-        peg$c83 = { type: "class", value: "[0-9]", description: "[0-9]" },
-        peg$c84 = /^[0-9a-f]/i,
-        peg$c85 = { type: "class", value: "[0-9a-f]i", description: "[0-9a-f]i" },
-        peg$c86 = /^[\n\r\u2028\u2029]/,
-        peg$c87 = { type: "class", value: "[\\n\\r\\u2028\\u2029]", description: "[\\n\\r\\u2028\\u2029]" },
-
-        peg$currPos          = 0,
-        peg$savedPos         = 0,
-        peg$posDetailsCache  = [{ line: 1, column: 1, seenCR: false }],
-        peg$maxFailPos       = 0,
-        peg$maxFailExpected  = [],
-        peg$silentFails      = 0,
-
-        peg$result;
-
-    if ("startRule" in options) {
-      if (!(options.startRule in peg$startRuleFunctions)) {
-        throw new Error("Can't start parsing from rule \"" + options.startRule + "\".");
-      }
-
-      peg$startRuleFunction = peg$startRuleFunctions[options.startRule];
-    }
-
-    function text() {
-      return input.substring(peg$savedPos, peg$currPos);
-    }
-
-    function location() {
-      return peg$computeLocation(peg$savedPos, peg$currPos);
-    }
-
-    function expected(description) {
-      throw peg$buildException(
-        null,
-        [{ type: "other", description: description }],
-        input.substring(peg$savedPos, peg$currPos),
-        peg$computeLocation(peg$savedPos, peg$currPos)
-      );
-    }
-
-    function error(message) {
-      throw peg$buildException(
-        message,
-        null,
-        input.substring(peg$savedPos, peg$currPos),
-        peg$computeLocation(peg$savedPos, peg$currPos)
-      );
-    }
-
-    function peg$computePosDetails(pos) {
-      var details = peg$posDetailsCache[pos],
-          p, ch;
-
-      if (details) {
-        return details;
-      } else {
-        p = pos - 1;
-        while (!peg$posDetailsCache[p]) {
-          p--;
-        }
-
-        details = peg$posDetailsCache[p];
-        details = {
-          line:   details.line,
-          column: details.column,
-          seenCR: details.seenCR
-        };
-
-        while (p < pos) {
-          ch = input.charAt(p);
-          if (ch === "\n") {
-            if (!details.seenCR) { details.line++; }
-            details.column = 1;
-            details.seenCR = false;
-          } else if (ch === "\r" || ch === "\u2028" || ch === "\u2029") {
-            details.line++;
-            details.column = 1;
-            details.seenCR = true;
-          } else {
-            details.column++;
-            details.seenCR = false;
-          }
-
-          p++;
-        }
-
-        peg$posDetailsCache[pos] = details;
-        return details;
-      }
-    }
-
-    function peg$computeLocation(startPos, endPos) {
-      var startPosDetails = peg$computePosDetails(startPos),
-          endPosDetails   = peg$computePosDetails(endPos);
-
-      return {
-        start: {
-          offset: startPos,
-          line:   startPosDetails.line,
-          column: startPosDetails.column
-        },
-        end: {
-          offset: endPos,
-          line:   endPosDetails.line,
-          column: endPosDetails.column
-        }
-      };
-    }
-
-    function peg$fail(expected) {
-      if (peg$currPos < peg$maxFailPos) { return; }
-
-      if (peg$currPos > peg$maxFailPos) {
-        peg$maxFailPos = peg$currPos;
-        peg$maxFailExpected = [];
-      }
-
-      peg$maxFailExpected.push(expected);
-    }
-
-    function peg$buildException(message, expected, found, location) {
-      function cleanupExpected(expected) {
-        var i = 1;
-
-        expected.sort(function(a, b) {
-          if (a.description < b.description) {
-            return -1;
-          } else if (a.description > b.description) {
-            return 1;
-          } else {
-            return 0;
-          }
-        });
-
-        while (i < expected.length) {
-          if (expected[i - 1] === expected[i]) {
-            expected.splice(i, 1);
-          } else {
-            i++;
-          }
-        }
-      }
-
-      function buildMessage(expected, found) {
-        function stringEscape(s) {
-          function hex(ch) { return ch.charCodeAt(0).toString(16).toUpperCase(); }
-
-          return s
-            .replace(/\\/g,   '\\\\')
-            .replace(/"/g,    '\\"')
-            .replace(/\x08/g, '\\b')
-            .replace(/\t/g,   '\\t')
-            .replace(/\n/g,   '\\n')
-            .replace(/\f/g,   '\\f')
-            .replace(/\r/g,   '\\r')
-            .replace(/[\x00-\x07\x0B\x0E\x0F]/g, function(ch) { return '\\x0' + hex(ch); })
-            .replace(/[\x10-\x1F\x80-\xFF]/g,    function(ch) { return '\\x'  + hex(ch); })
-            .replace(/[\u0100-\u0FFF]/g,         function(ch) { return '\\u0' + hex(ch); })
-            .replace(/[\u1000-\uFFFF]/g,         function(ch) { return '\\u'  + hex(ch); });
-        }
-
-        var expectedDescs = new Array(expected.length),
-            expectedDesc, foundDesc, i;
-
-        for (i = 0; i < expected.length; i++) {
-          expectedDescs[i] = expected[i].description;
-        }
-
-        expectedDesc = expected.length > 1
-          ? expectedDescs.slice(0, -1).join(", ")
-              + " or "
-              + expectedDescs[expected.length - 1]
-          : expectedDescs[0];
-
-        foundDesc = found ? "\"" + stringEscape(found) + "\"" : "end of input";
-
-        return "Expected " + expectedDesc + " but " + foundDesc + " found.";
-      }
-
-      if (expected !== null) {
-        cleanupExpected(expected);
-      }
-
-      return new peg$SyntaxError(
-        message !== null ? message : buildMessage(expected, found),
-        expected,
-        found,
-        location
-      );
-    }
-
-    function peg$parseProto_text() {
-      var s0, s1, s2, s3;
-
-      s0 = peg$currPos;
-      s1 = peg$parsewsc();
-      if (s1 !== peg$FAILED) {
-        s2 = peg$parsedoc();
-        if (s2 !== peg$FAILED) {
-          s3 = peg$parsewsc();
-          if (s3 !== peg$FAILED) {
-            peg$savedPos = s0;
-            s1 = peg$c0(s2);
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsews() {
-      var s0, s1;
-
-      peg$silentFails++;
-      s0 = [];
-      if (peg$c2.test(input.charAt(peg$currPos))) {
-        s1 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c3); }
-      }
-      while (s1 !== peg$FAILED) {
-        s0.push(s1);
-        if (peg$c2.test(input.charAt(peg$currPos))) {
-          s1 = input.charAt(peg$currPos);
-          peg$currPos++;
-        } else {
-          s1 = peg$FAILED;
-          if (peg$silentFails === 0) { peg$fail(peg$c3); }
-        }
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c1); }
-      }
-
-      return s0;
-    }
-
-    function peg$parsewsc() {
-      var s0, s1, s2, s3;
-
-      peg$silentFails++;
-      s0 = peg$currPos;
-      s1 = peg$parsews();
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$parsecomment();
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$parsecomment();
-        }
-        if (s2 !== peg$FAILED) {
-          s3 = peg$parsews();
-          if (s3 !== peg$FAILED) {
-            s1 = [s1, s2, s3];
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c4); }
-      }
-
-      return s0;
-    }
-
-    function peg$parsedoc() {
-      var s0, s1, s2, s3, s4, s5;
-
-      s0 = peg$currPos;
-      s1 = peg$parsevalue();
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$currPos;
-        s4 = peg$parsewsc();
-        if (s4 !== peg$FAILED) {
-          s5 = peg$parsevalue();
-          if (s5 !== peg$FAILED) {
-            peg$savedPos = s3;
-            s4 = peg$c5(s1, s5);
-            s3 = s4;
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s3;
-          s3 = peg$FAILED;
-        }
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$currPos;
-          s4 = peg$parsewsc();
-          if (s4 !== peg$FAILED) {
-            s5 = peg$parsevalue();
-            if (s5 !== peg$FAILED) {
-              peg$savedPos = s3;
-              s4 = peg$c5(s1, s5);
-              s3 = s4;
-            } else {
-              peg$currPos = s3;
-              s3 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        }
-        if (s2 !== peg$FAILED) {
-          s1 = [s1, s2];
-          s0 = s1;
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsevalue() {
-      var s0;
-
-      s0 = peg$parseobject();
-      if (s0 === peg$FAILED) {
-        s0 = peg$parsepairs();
-      }
-
-      return s0;
-    }
-
-    function peg$parsecomment() {
-      var s0, s1, s2, s3, s4, s5, s6;
-
-      peg$silentFails++;
-      s0 = peg$currPos;
-      s1 = peg$parsews();
-      if (s1 !== peg$FAILED) {
-        if (input.charCodeAt(peg$currPos) === 35) {
-          s2 = peg$c7;
-          peg$currPos++;
-        } else {
-          s2 = peg$FAILED;
-          if (peg$silentFails === 0) { peg$fail(peg$c8); }
-        }
-        if (s2 !== peg$FAILED) {
-          s3 = [];
-          s4 = peg$currPos;
-          s5 = peg$currPos;
-          peg$silentFails++;
-          s6 = peg$parseLineTerminator();
-          peg$silentFails--;
-          if (s6 === peg$FAILED) {
-            s5 = void 0;
-          } else {
-            peg$currPos = s5;
-            s5 = peg$FAILED;
-          }
-          if (s5 !== peg$FAILED) {
-            if (input.length > peg$currPos) {
-              s6 = input.charAt(peg$currPos);
-              peg$currPos++;
-            } else {
-              s6 = peg$FAILED;
-              if (peg$silentFails === 0) { peg$fail(peg$c9); }
-            }
-            if (s6 !== peg$FAILED) {
-              s5 = [s5, s6];
-              s4 = s5;
-            } else {
-              peg$currPos = s4;
-              s4 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s4;
-            s4 = peg$FAILED;
-          }
-          while (s4 !== peg$FAILED) {
-            s3.push(s4);
-            s4 = peg$currPos;
-            s5 = peg$currPos;
-            peg$silentFails++;
-            s6 = peg$parseLineTerminator();
-            peg$silentFails--;
-            if (s6 === peg$FAILED) {
-              s5 = void 0;
-            } else {
-              peg$currPos = s5;
-              s5 = peg$FAILED;
-            }
-            if (s5 !== peg$FAILED) {
-              if (input.length > peg$currPos) {
-                s6 = input.charAt(peg$currPos);
-                peg$currPos++;
-              } else {
-                s6 = peg$FAILED;
-                if (peg$silentFails === 0) { peg$fail(peg$c9); }
-              }
-              if (s6 !== peg$FAILED) {
-                s5 = [s5, s6];
-                s4 = s5;
-              } else {
-                peg$currPos = s4;
-                s4 = peg$FAILED;
-              }
-            } else {
-              peg$currPos = s4;
-              s4 = peg$FAILED;
-            }
-          }
-          if (s3 !== peg$FAILED) {
-            s1 = [s1, s2, s3];
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c6); }
-      }
-
-      return s0;
-    }
-
-    function peg$parsepairs() {
-      var s0, s1, s2, s3, s4, s5;
-
-      s0 = peg$currPos;
-      s1 = peg$parsepair();
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$currPos;
-        s4 = peg$parsewsc();
-        if (s4 !== peg$FAILED) {
-          s5 = peg$parsepair();
-          if (s5 !== peg$FAILED) {
-            peg$savedPos = s3;
-            s4 = peg$c10(s1, s5);
-            s3 = s4;
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s3;
-          s3 = peg$FAILED;
-        }
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$currPos;
-          s4 = peg$parsewsc();
-          if (s4 !== peg$FAILED) {
-            s5 = peg$parsepair();
-            if (s5 !== peg$FAILED) {
-              peg$savedPos = s3;
-              s4 = peg$c10(s1, s5);
-              s3 = s4;
-            } else {
-              peg$currPos = s3;
-              s3 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        }
-        if (s2 !== peg$FAILED) {
-          peg$savedPos = s0;
-          s1 = peg$c11(s1, s2);
-          s0 = s1;
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsepair() {
-      var s0, s1, s2, s3, s4, s5;
-
-      s0 = peg$currPos;
-      s1 = peg$parsekey();
-      if (s1 !== peg$FAILED) {
-        s2 = peg$parsews();
-        if (s2 !== peg$FAILED) {
-          if (input.charCodeAt(peg$currPos) === 58) {
-            s3 = peg$c12;
-            peg$currPos++;
-          } else {
-            s3 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c13); }
-          }
-          if (s3 !== peg$FAILED) {
-            s4 = peg$parsews();
-            if (s4 !== peg$FAILED) {
-              s5 = peg$parsestring();
-              if (s5 === peg$FAILED) {
-                s5 = peg$parsenumber();
-                if (s5 === peg$FAILED) {
-                  s5 = peg$parsekey();
-                  if (s5 === peg$FAILED) {
-                    s5 = peg$parselist();
-                  }
-                }
-              }
-              if (s5 !== peg$FAILED) {
-                peg$savedPos = s0;
-                s1 = peg$c14(s1, s5);
-                s0 = s1;
-              } else {
-                peg$currPos = s0;
-                s0 = peg$FAILED;
-              }
-            } else {
-              peg$currPos = s0;
-              s0 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parselist() {
-      var s0, s1, s2, s3, s4, s5, s6, s7;
-
-      s0 = peg$currPos;
-      if (input.charCodeAt(peg$currPos) === 91) {
-        s1 = peg$c15;
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c16); }
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$currPos;
-        s4 = peg$parsews();
-        if (s4 !== peg$FAILED) {
-          s5 = peg$parsestring();
-          if (s5 === peg$FAILED) {
-            s5 = peg$parsenumber();
-          }
-          if (s5 !== peg$FAILED) {
-            s6 = peg$parsews();
-            if (s6 !== peg$FAILED) {
-              if (input.charCodeAt(peg$currPos) === 44) {
-                s7 = peg$c17;
-                peg$currPos++;
-              } else {
-                s7 = peg$FAILED;
-                if (peg$silentFails === 0) { peg$fail(peg$c18); }
-              }
-              if (s7 === peg$FAILED) {
-                s7 = null;
-              }
-              if (s7 !== peg$FAILED) {
-                peg$savedPos = s3;
-                s4 = peg$c19(s5);
-                s3 = s4;
-              } else {
-                peg$currPos = s3;
-                s3 = peg$FAILED;
-              }
-            } else {
-              peg$currPos = s3;
-              s3 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s3;
-          s3 = peg$FAILED;
-        }
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$currPos;
-          s4 = peg$parsews();
-          if (s4 !== peg$FAILED) {
-            s5 = peg$parsestring();
-            if (s5 === peg$FAILED) {
-              s5 = peg$parsenumber();
-            }
-            if (s5 !== peg$FAILED) {
-              s6 = peg$parsews();
-              if (s6 !== peg$FAILED) {
-                if (input.charCodeAt(peg$currPos) === 44) {
-                  s7 = peg$c17;
-                  peg$currPos++;
-                } else {
-                  s7 = peg$FAILED;
-                  if (peg$silentFails === 0) { peg$fail(peg$c18); }
-                }
-                if (s7 === peg$FAILED) {
-                  s7 = null;
-                }
-                if (s7 !== peg$FAILED) {
-                  peg$savedPos = s3;
-                  s4 = peg$c19(s5);
-                  s3 = s4;
-                } else {
-                  peg$currPos = s3;
-                  s3 = peg$FAILED;
-                }
-              } else {
-                peg$currPos = s3;
-                s3 = peg$FAILED;
-              }
-            } else {
-              peg$currPos = s3;
-              s3 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s3;
-            s3 = peg$FAILED;
-          }
-        }
-        if (s2 !== peg$FAILED) {
-          s3 = peg$parsews();
-          if (s3 !== peg$FAILED) {
-            if (input.charCodeAt(peg$currPos) === 93) {
-              s4 = peg$c20;
-              peg$currPos++;
-            } else {
-              s4 = peg$FAILED;
-              if (peg$silentFails === 0) { peg$fail(peg$c21); }
-            }
-            if (s4 !== peg$FAILED) {
-              peg$savedPos = s0;
-              s1 = peg$c22(s2);
-              s0 = s1;
-            } else {
-              peg$currPos = s0;
-              s0 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parseobject() {
-      var s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
-
-      s0 = peg$currPos;
-      s1 = peg$parsekey();
-      if (s1 !== peg$FAILED) {
-        s2 = peg$parsews();
-        if (s2 !== peg$FAILED) {
-          if (input.charCodeAt(peg$currPos) === 58) {
-            s3 = peg$c12;
-            peg$currPos++;
-          } else {
-            s3 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c13); }
-          }
-          if (s3 === peg$FAILED) {
-            s3 = null;
-          }
-          if (s3 !== peg$FAILED) {
-            s4 = peg$parsews();
-            if (s4 !== peg$FAILED) {
-              if (input.charCodeAt(peg$currPos) === 123) {
-                s5 = peg$c23;
-                peg$currPos++;
-              } else {
-                s5 = peg$FAILED;
-                if (peg$silentFails === 0) { peg$fail(peg$c24); }
-              }
-              if (s5 !== peg$FAILED) {
-                s6 = peg$parsewsc();
-                if (s6 !== peg$FAILED) {
-                  s7 = peg$parsemember();
-                  if (s7 === peg$FAILED) {
-                    s7 = null;
-                  }
-                  if (s7 !== peg$FAILED) {
-                    s8 = [];
-                    s9 = peg$currPos;
-                    s10 = peg$parsewsc();
-                    if (s10 !== peg$FAILED) {
-                      s11 = peg$parsemember();
-                      if (s11 !== peg$FAILED) {
-                        peg$savedPos = s9;
-                        s10 = peg$c25(s1, s7, s11);
-                        s9 = s10;
-                      } else {
-                        peg$currPos = s9;
-                        s9 = peg$FAILED;
-                      }
-                    } else {
-                      peg$currPos = s9;
-                      s9 = peg$FAILED;
-                    }
-                    while (s9 !== peg$FAILED) {
-                      s8.push(s9);
-                      s9 = peg$currPos;
-                      s10 = peg$parsewsc();
-                      if (s10 !== peg$FAILED) {
-                        s11 = peg$parsemember();
-                        if (s11 !== peg$FAILED) {
-                          peg$savedPos = s9;
-                          s10 = peg$c25(s1, s7, s11);
-                          s9 = s10;
-                        } else {
-                          peg$currPos = s9;
-                          s9 = peg$FAILED;
-                        }
-                      } else {
-                        peg$currPos = s9;
-                        s9 = peg$FAILED;
-                      }
-                    }
-                    if (s8 !== peg$FAILED) {
-                      s9 = peg$parsewsc();
-                      if (s9 !== peg$FAILED) {
-                        if (input.charCodeAt(peg$currPos) === 125) {
-                          s10 = peg$c26;
-                          peg$currPos++;
-                        } else {
-                          s10 = peg$FAILED;
-                          if (peg$silentFails === 0) { peg$fail(peg$c27); }
-                        }
-                        if (s10 !== peg$FAILED) {
-                          s11 = peg$parsewsc();
-                          if (s11 !== peg$FAILED) {
-                            peg$savedPos = s0;
-                            s1 = peg$c28(s1, s7, s8);
-                            s0 = s1;
-                          } else {
-                            peg$currPos = s0;
-                            s0 = peg$FAILED;
-                          }
-                        } else {
-                          peg$currPos = s0;
-                          s0 = peg$FAILED;
-                        }
-                      } else {
-                        peg$currPos = s0;
-                        s0 = peg$FAILED;
-                      }
-                    } else {
-                      peg$currPos = s0;
-                      s0 = peg$FAILED;
-                    }
-                  } else {
-                    peg$currPos = s0;
-                    s0 = peg$FAILED;
-                  }
-                } else {
-                  peg$currPos = s0;
-                  s0 = peg$FAILED;
-                }
-              } else {
-                peg$currPos = s0;
-                s0 = peg$FAILED;
-              }
-            } else {
-              peg$currPos = s0;
-              s0 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsemember() {
-      var s0;
-
-      s0 = peg$parsecomment();
-      if (s0 === peg$FAILED) {
-        s0 = peg$parsepairs();
-        if (s0 === peg$FAILED) {
-          s0 = peg$parseobject();
-        }
-      }
-
-      return s0;
-    }
-
-    function peg$parsenumber() {
-      var s0, s1, s2, s3, s4;
-
-      peg$silentFails++;
-      s0 = peg$currPos;
-      s1 = peg$parseminus();
-      if (s1 === peg$FAILED) {
-        s1 = null;
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = peg$parseint();
-        if (s2 !== peg$FAILED) {
-          s3 = peg$parsefrac();
-          if (s3 === peg$FAILED) {
-            s3 = null;
-          }
-          if (s3 !== peg$FAILED) {
-            s4 = peg$parseexp();
-            if (s4 === peg$FAILED) {
-              s4 = null;
-            }
-            if (s4 !== peg$FAILED) {
-              peg$savedPos = s0;
-              s1 = peg$c30();
-              s0 = s1;
-            } else {
-              peg$currPos = s0;
-              s0 = peg$FAILED;
-            }
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c29); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseexp() {
-      var s0, s1, s2, s3, s4;
-
-      s0 = peg$currPos;
-      if (peg$c31.test(input.charAt(peg$currPos))) {
-        s1 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c32); }
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = peg$parseminus();
-        if (s2 === peg$FAILED) {
-          s2 = peg$parseplus();
-        }
-        if (s2 === peg$FAILED) {
-          s2 = null;
-        }
-        if (s2 !== peg$FAILED) {
-          s3 = [];
-          s4 = peg$parseDigit();
-          if (s4 !== peg$FAILED) {
-            while (s4 !== peg$FAILED) {
-              s3.push(s4);
-              s4 = peg$parseDigit();
-            }
-          } else {
-            s3 = peg$FAILED;
-          }
-          if (s3 !== peg$FAILED) {
-            s1 = [s1, s2, s3];
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsefrac() {
-      var s0, s1, s2, s3;
-
-      s0 = peg$currPos;
-      if (input.charCodeAt(peg$currPos) === 46) {
-        s1 = peg$c33;
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c34); }
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$parseDigit();
-        if (s3 !== peg$FAILED) {
-          while (s3 !== peg$FAILED) {
-            s2.push(s3);
-            s3 = peg$parseDigit();
-          }
-        } else {
-          s2 = peg$FAILED;
-        }
-        if (s2 !== peg$FAILED) {
-          s1 = [s1, s2];
-          s0 = s1;
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parseint() {
-      var s0, s1, s2, s3;
-
-      if (input.charCodeAt(peg$currPos) === 48) {
-        s0 = peg$c35;
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c36); }
-      }
-      if (s0 === peg$FAILED) {
-        s0 = peg$currPos;
-        if (peg$c37.test(input.charAt(peg$currPos))) {
-          s1 = input.charAt(peg$currPos);
-          peg$currPos++;
-        } else {
-          s1 = peg$FAILED;
-          if (peg$silentFails === 0) { peg$fail(peg$c38); }
-        }
-        if (s1 !== peg$FAILED) {
-          s2 = [];
-          s3 = peg$parseDigit();
-          while (s3 !== peg$FAILED) {
-            s2.push(s3);
-            s3 = peg$parseDigit();
-          }
-          if (s2 !== peg$FAILED) {
-            s1 = [s1, s2];
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      }
-
-      return s0;
-    }
-
-    function peg$parseminus() {
-      var s0;
-
-      if (input.charCodeAt(peg$currPos) === 45) {
-        s0 = peg$c39;
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c40); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseplus() {
-      var s0;
-
-      if (input.charCodeAt(peg$currPos) === 43) {
-        s0 = peg$c41;
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c42); }
-      }
-
-      return s0;
-    }
-
-    function peg$parsestring() {
-      var s0;
-
-      s0 = peg$parsesstring();
-      if (s0 === peg$FAILED) {
-        s0 = peg$parsedstring();
-      }
-
-      return s0;
-    }
-
-    function peg$parsesstring() {
-      var s0, s1, s2, s3;
-
-      s0 = peg$currPos;
-      if (input.charCodeAt(peg$currPos) === 39) {
-        s1 = peg$c43;
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c44); }
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$parseschar();
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$parseschar();
-        }
-        if (s2 !== peg$FAILED) {
-          if (input.charCodeAt(peg$currPos) === 39) {
-            s3 = peg$c43;
-            peg$currPos++;
-          } else {
-            s3 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c44); }
-          }
-          if (s3 !== peg$FAILED) {
-            peg$savedPos = s0;
-            s1 = peg$c45(s2);
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsedstring() {
-      var s0, s1, s2, s3;
-
-      s0 = peg$currPos;
-      if (input.charCodeAt(peg$currPos) === 34) {
-        s1 = peg$c46;
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c47); }
-      }
-      if (s1 !== peg$FAILED) {
-        s2 = [];
-        s3 = peg$parsedchar();
-        while (s3 !== peg$FAILED) {
-          s2.push(s3);
-          s3 = peg$parsedchar();
-        }
-        if (s2 !== peg$FAILED) {
-          if (input.charCodeAt(peg$currPos) === 34) {
-            s3 = peg$c46;
-            peg$currPos++;
-          } else {
-            s3 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c47); }
-          }
-          if (s3 !== peg$FAILED) {
-            peg$savedPos = s0;
-            s1 = peg$c45(s2);
-            s0 = s1;
-          } else {
-            peg$currPos = s0;
-            s0 = peg$FAILED;
-          }
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-
-      return s0;
-    }
-
-    function peg$parsekey() {
-      var s0, s1, s2;
-
-      peg$silentFails++;
-      s0 = peg$currPos;
-      s1 = [];
-      if (peg$c49.test(input.charAt(peg$currPos))) {
-        s2 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s2 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c50); }
-      }
-      if (s2 !== peg$FAILED) {
-        while (s2 !== peg$FAILED) {
-          s1.push(s2);
-          if (peg$c49.test(input.charAt(peg$currPos))) {
-            s2 = input.charAt(peg$currPos);
-            peg$currPos++;
-          } else {
-            s2 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c50); }
-          }
-        }
-      } else {
-        s1 = peg$FAILED;
-      }
-      if (s1 !== peg$FAILED) {
-        peg$savedPos = s0;
-        s1 = peg$c51(s1);
-      }
-      s0 = s1;
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c48); }
-      }
-
-      return s0;
-    }
-
-    function peg$parsedchar() {
-      var s0, s1;
-
-      peg$silentFails++;
-      if (peg$c53.test(input.charAt(peg$currPos))) {
-        s0 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c54); }
-      }
-      if (s0 === peg$FAILED) {
-        s0 = peg$parseechar();
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c52); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseschar() {
-      var s0, s1;
-
-      peg$silentFails++;
-      if (peg$c56.test(input.charAt(peg$currPos))) {
-        s0 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c57); }
-      }
-      if (s0 === peg$FAILED) {
-        s0 = peg$parseechar();
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c55); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseechar() {
-      var s0, s1, s2, s3, s4, s5, s6, s7, s8, s9;
-
-      peg$silentFails++;
-      s0 = peg$currPos;
-      if (input.charCodeAt(peg$currPos) === 92) {
-        s1 = peg$c59;
-        peg$currPos++;
-      } else {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c60); }
-      }
-      if (s1 !== peg$FAILED) {
-        if (input.charCodeAt(peg$currPos) === 34) {
-          s2 = peg$c46;
-          peg$currPos++;
-        } else {
-          s2 = peg$FAILED;
-          if (peg$silentFails === 0) { peg$fail(peg$c47); }
-        }
-        if (s2 === peg$FAILED) {
-          if (input.charCodeAt(peg$currPos) === 39) {
-            s2 = peg$c43;
-            peg$currPos++;
-          } else {
-            s2 = peg$FAILED;
-            if (peg$silentFails === 0) { peg$fail(peg$c44); }
-          }
-          if (s2 === peg$FAILED) {
-            if (input.charCodeAt(peg$currPos) === 92) {
-              s2 = peg$c59;
-              peg$currPos++;
-            } else {
-              s2 = peg$FAILED;
-              if (peg$silentFails === 0) { peg$fail(peg$c60); }
-            }
-            if (s2 === peg$FAILED) {
-              if (input.charCodeAt(peg$currPos) === 47) {
-                s2 = peg$c61;
-                peg$currPos++;
-              } else {
-                s2 = peg$FAILED;
-                if (peg$silentFails === 0) { peg$fail(peg$c62); }
-              }
-              if (s2 === peg$FAILED) {
-                s2 = peg$currPos;
-                if (input.charCodeAt(peg$currPos) === 98) {
-                  s3 = peg$c63;
-                  peg$currPos++;
-                } else {
-                  s3 = peg$FAILED;
-                  if (peg$silentFails === 0) { peg$fail(peg$c64); }
-                }
-                if (s3 !== peg$FAILED) {
-                  peg$savedPos = s2;
-                  s3 = peg$c65();
-                }
-                s2 = s3;
-                if (s2 === peg$FAILED) {
-                  s2 = peg$currPos;
-                  if (input.charCodeAt(peg$currPos) === 102) {
-                    s3 = peg$c66;
-                    peg$currPos++;
-                  } else {
-                    s3 = peg$FAILED;
-                    if (peg$silentFails === 0) { peg$fail(peg$c67); }
-                  }
-                  if (s3 !== peg$FAILED) {
-                    peg$savedPos = s2;
-                    s3 = peg$c68();
-                  }
-                  s2 = s3;
-                  if (s2 === peg$FAILED) {
-                    s2 = peg$currPos;
-                    if (input.charCodeAt(peg$currPos) === 110) {
-                      s3 = peg$c69;
-                      peg$currPos++;
-                    } else {
-                      s3 = peg$FAILED;
-                      if (peg$silentFails === 0) { peg$fail(peg$c70); }
-                    }
-                    if (s3 !== peg$FAILED) {
-                      peg$savedPos = s2;
-                      s3 = peg$c71();
-                    }
-                    s2 = s3;
-                    if (s2 === peg$FAILED) {
-                      s2 = peg$currPos;
-                      if (input.charCodeAt(peg$currPos) === 114) {
-                        s3 = peg$c72;
-                        peg$currPos++;
-                      } else {
-                        s3 = peg$FAILED;
-                        if (peg$silentFails === 0) { peg$fail(peg$c73); }
-                      }
-                      if (s3 !== peg$FAILED) {
-                        peg$savedPos = s2;
-                        s3 = peg$c74();
-                      }
-                      s2 = s3;
-                      if (s2 === peg$FAILED) {
-                        s2 = peg$currPos;
-                        if (input.charCodeAt(peg$currPos) === 116) {
-                          s3 = peg$c75;
-                          peg$currPos++;
-                        } else {
-                          s3 = peg$FAILED;
-                          if (peg$silentFails === 0) { peg$fail(peg$c76); }
-                        }
-                        if (s3 !== peg$FAILED) {
-                          peg$savedPos = s2;
-                          s3 = peg$c77();
-                        }
-                        s2 = s3;
-                        if (s2 === peg$FAILED) {
-                          s2 = peg$currPos;
-                          if (input.charCodeAt(peg$currPos) === 117) {
-                            s3 = peg$c78;
-                            peg$currPos++;
-                          } else {
-                            s3 = peg$FAILED;
-                            if (peg$silentFails === 0) { peg$fail(peg$c79); }
-                          }
-                          if (s3 !== peg$FAILED) {
-                            s4 = peg$currPos;
-                            s5 = peg$currPos;
-                            s6 = peg$parseHexDigit();
-                            if (s6 !== peg$FAILED) {
-                              s7 = peg$parseHexDigit();
-                              if (s7 !== peg$FAILED) {
-                                s8 = peg$parseHexDigit();
-                                if (s8 !== peg$FAILED) {
-                                  s9 = peg$parseHexDigit();
-                                  if (s9 !== peg$FAILED) {
-                                    s6 = [s6, s7, s8, s9];
-                                    s5 = s6;
-                                  } else {
-                                    peg$currPos = s5;
-                                    s5 = peg$FAILED;
-                                  }
-                                } else {
-                                  peg$currPos = s5;
-                                  s5 = peg$FAILED;
-                                }
-                              } else {
-                                peg$currPos = s5;
-                                s5 = peg$FAILED;
-                              }
-                            } else {
-                              peg$currPos = s5;
-                              s5 = peg$FAILED;
-                            }
-                            if (s5 !== peg$FAILED) {
-                              s4 = input.substring(s4, peg$currPos);
-                            } else {
-                              s4 = s5;
-                            }
-                            if (s4 !== peg$FAILED) {
-                              peg$savedPos = s2;
-                              s3 = peg$c80(s4);
-                              s2 = s3;
-                            } else {
-                              peg$currPos = s2;
-                              s2 = peg$FAILED;
-                            }
-                          } else {
-                            peg$currPos = s2;
-                            s2 = peg$FAILED;
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        if (s2 !== peg$FAILED) {
-          peg$savedPos = s0;
-          s1 = peg$c81(s2);
-          s0 = s1;
-        } else {
-          peg$currPos = s0;
-          s0 = peg$FAILED;
-        }
-      } else {
-        peg$currPos = s0;
-        s0 = peg$FAILED;
-      }
-      peg$silentFails--;
-      if (s0 === peg$FAILED) {
-        s1 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c58); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseDigit() {
-      var s0;
-
-      if (peg$c82.test(input.charAt(peg$currPos))) {
-        s0 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c83); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseHexDigit() {
-      var s0;
-
-      if (peg$c84.test(input.charAt(peg$currPos))) {
-        s0 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c85); }
-      }
-
-      return s0;
-    }
-
-    function peg$parseLineTerminator() {
-      var s0;
-
-      if (peg$c86.test(input.charAt(peg$currPos))) {
-        s0 = input.charAt(peg$currPos);
-        peg$currPos++;
-      } else {
-        s0 = peg$FAILED;
-        if (peg$silentFails === 0) { peg$fail(peg$c87); }
-      }
-
-      return s0;
-    }
-
-    peg$result = peg$startRuleFunction();
-
-    if (peg$result !== peg$FAILED && peg$currPos === input.length) {
-      return peg$result;
-    } else {
-      if (peg$result !== peg$FAILED && peg$currPos < input.length) {
-        peg$fail({ type: "end", description: "end of input" });
-      }
-
-      throw peg$buildException(
-        null,
-        peg$maxFailExpected,
-        peg$maxFailPos < input.length ? input.charAt(peg$maxFailPos) : null,
-        peg$maxFailPos < input.length
-          ? peg$computeLocation(peg$maxFailPos, peg$maxFailPos + 1)
-          : peg$computeLocation(peg$maxFailPos, peg$maxFailPos)
-      );
-    }
-  }
-
-  return {
-    SyntaxError: peg$SyntaxError,
-    parse:       peg$parse
-  };
-})();
-
-},{}],8:[function(require,module,exports){
-var Editor;
-
-module.exports = Editor = class Editor {
-  constructor(loaderFunc, loader) {
-    var $editorBox, editorWidthPercentage, preset, ref;
-    this.loaderFunc = loaderFunc;
-    editorWidthPercentage = 30;
-    $editorBox = $($.parseHTML('<div class="column"></div>'));
-    $editorBox.width(editorWidthPercentage + '%');
-    $('#net-column').width((100 - editorWidthPercentage) + '%');
-    $('#master-container').prepend($editorBox);
-    preset = (ref = loader.dataLoaded) != null ? ref : '# Enter your network definition here.\n# Use Shift+Enter to update the visualization.';
-    this.editor = CodeMirror($editorBox[0], {
-      value: preset,
-      lineNumbers: true,
-      lineWrapping: true
-    });
-    this.editor.on('keydown', (cm, e) => {
-      return this.onKeyDown(e);
-    });
-  }
-
-  reload(loaderFunc, loader) {
-    var preset, ref;
-    this.loaderFunc = loaderFunc;
-    preset = (ref = loader.dataLoaded) != null ? ref : '# Enter your network definition here.\n# Use Shift+Enter to update the visualization.';
-    return this.editor.setValue(preset);
-  }
-
-  //alert(preset)
-  onKeyDown(e) {
-    if (e.shiftKey && e.keyCode === 13) {
-      // Using onKeyDown lets us prevent the default action,
-      // even if an error is encountered (say, due to parsing).
-      // This would not be possible with keymaps.
-      e.preventDefault();
-      return this.loaderFunc(this.editor.getValue());
-    }
-  }
-
-};
-
-
-},{}],9:[function(require,module,exports){
-var Loader;
-
-module.exports = Loader = class Loader {
-  constructor(parser) {
-    this.fromGist = this.fromGist.bind(this);
-    this.fromURL = this.fromURL.bind(this);
-    this.fromPreset = this.fromPreset.bind(this);
-    this.load = this.load.bind(this);
-    this.parser = parser;
-    // The parser is a unary function that accepts the network source
-    // and outputs a Network instance.
-    this.dataLoaded = null;
-  }
-
-  fromGist(gistID, callback) {
-    var url;
-    // Load the model with the given Gist ID.
-    url = 'https://api.github.com/gists/' + gistID;
-    return $.getJSON(url, (data) => {
-      var fileInfo, fileKey, fileSet, filename, isProto, isSolitaryFile, isSolver;
-      fileSet = data['files'];
-      isSolitaryFile = Object.keys(fileSet).length === 1;
-      for (fileKey in fileSet) {
-        fileInfo = fileSet[fileKey];
-        filename = fileInfo['filename'].toLowerCase();
-        isProto = _.endsWith(filename, '.prototxt');
-        isSolver = _.startsWith(filename, 'solver');
-        if ((isProto && !isSolver) || isSolitaryFile) {
-          this.load(fileInfo['content'], callback);
-          return;
-        }
-      }
-      return console.log('No prototxt found in the given GIST.');
-    });
-  }
-
-  fromURL(url, callback) {
-    // Load the model from the given URL.
-    // This may fail due to same-origin policy.
-    return $.ajax({
-      url: url,
-      success: () => {
-        return this.load(data, callback);
-      }
-    });
-  }
-
-  fromPreset(name, callback) {
-    // Load a preset model. Caffe Only.
-    return $.get('./presets/' + name + '.prototxt', (data) => {
-      return this.load(data, callback);
-    });
-  }
-
-  load(data, callback) {
-    var net;
-    this.dataLoaded = data;
-    net = this.parser.parse(data);
-    if (!_.isUndefined(callback)) {
-      callback(net);
-    }
-    return net;
-  }
-
-};
-
-
-},{}],10:[function(require,module,exports){
-var AppController, CaffeNetwork, Loader, showDocumentation;
-
-AppController = require('./app.coffee');
-
-CaffeNetwork = require('./caffe/caffe.coffee');
-
-Loader = require('./loader.coffee');
-
-window.do_variants_analysis = false;
-
-showDocumentation = function() {
-  return window.location.href = 'quickstart.html';
-};
-
-$(document).ready(function() {
-  var app, loader, makeLoader, router, routes;
-  app = new AppController();
-  // Setup Caffe model loader.
-  // This can be replaced with any arbitrary parser to support
-  // formats other than Caffe.
-  loader = new Loader(CaffeNetwork);
-  // Helper function for wrapping the load calls.
-  makeLoader = function(loadingFunc, loader) {
-    return function(...args) {
-      return app.startLoading(loadingFunc, loader, ...args);
-    };
-  };
-  // Register routes
-  routes = {
-    '/gist/:gistID': makeLoader(loader.fromGist, loader),
-    '/url/(.+)': makeLoader(loader.fromURL, loader),
-    '/preset/:name': makeLoader(loader.fromPreset, loader),
-    '/editor(/?)': () => {
-      return app.showEditor(loader);
-    },
-    '/doc': () => {
-      return showDocumentation();
-    }
-  };
-  router = Router(routes);
-  return router.init('/doc');
-});
-
-
-},{"./app.coffee":5,"./caffe/caffe.coffee":6,"./loader.coffee":9}],11:[function(require,module,exports){
-var Network, Node,
-  indexOf = [].indexOf;
-
-Node = class Node {
-  constructor(name, type1, attribs1 = {}, analysis1 = {}) {
-    this.addChild = this.addChild.bind(this);
-    this.addChildren = this.addChildren.bind(this);
-    this.addParent = this.addParent.bind(this);
-    this.addParents = this.addParents.bind(this);
-    this.detachChild = this.detachChild.bind(this);
-    this.detachChildren = this.detachChildren.bind(this);
-    this.name = name;
-    this.type = type1;
-    this.attribs = attribs1;
-    this.analysis = analysis1;
-    this.parents = [];
-    this.children = [];
-    // Nodes to be coalesced (by the renderer) with the current one.
-    // For instance, this can be used for grouping in-place operations.
-    // Note that this assumes the nodes to be coalesced and the current
-    // node form a simple chain structure.
-    this.coalesce = [];
-  }
-
-  addChild(child) {
-    if (indexOf.call(this.children, child) < 0) {
-      this.children.push(child);
-      if (indexOf.call(child.parents, this) < 0) {
-        return child.parents.push(this);
-      }
-    }
-  }
-
-  addChildren(children) {
-    return _.forEach(children, (c) => {
-      return this.addChild(c);
-    });
-  }
-
-  addParent(parent) {
-    return parent.addChild(this);
-  }
-
-  addParents(parents) {
-    return _.forEach(parents, (p) => {
-      return this.addParent(p);
-    });
-  }
-
-  detachChild(child) {
-    _.pull(this.children, child);
-    return _.pull(child.parents, this);
-  }
-
-  detachChildren() {
-    var children;
-    children = _.clone(this.children);
-    _.forEach(children, (c) => {
-      return this.detachChild(c);
-    });
-    return children;
-  }
-
-};
-
-module.exports = Network = class Network {
-  constructor(name = 'Untitled Network') {
-    this.sortTopologically = this.sortTopologically.bind(this);
-    this.name = name;
-    this.nodes = [];
-  }
-
-  createNode(label, type, attribs, analysis) {
-    var node;
-    node = new Node(label, type, attribs, analysis);
-    this.nodes.push(node);
-    return node;
-  }
-
-  sortTopologically() {
-    var i, j, len, len1, node, sortedNodes, unsortedNodes, visit;
-    sortedNodes = [];
-    unsortedNodes = _.clone(this.nodes);
-    for (i = 0, len = unsortedNodes.length; i < len; i++) {
-      node = unsortedNodes[i];
-      node.sort_ = {
-        temp: false,
-        perm: false
-      };
-    }
-    visit = function(node) {
-      var child, j, len1, ref;
-      if (node.sort_.temp === true) {
-        throw "Graph is not a DAG.";
-      }
-      if (node.sort_.perm) {
-        return;
-      }
-      node.sort_.temp = true;
-      ref = node.children;
-      for (j = 0, len1 = ref.length; j < len1; j++) {
-        child = ref[j];
-        visit(child);
-      }
-      node.sort_.perm = true;
-      node.sort_.temp = false;
-      return sortedNodes.unshift(node);
-    };
-    while (unsortedNodes.length !== 0) {
-      visit(unsortedNodes.pop());
-    }
-    for (j = 0, len1 = sortedNodes.length; j < len1; j++) {
-      node = sortedNodes[j];
-      delete node.sort_;
-    }
-    return sortedNodes;
-  }
-
-};
-
-
-},{}],12:[function(require,module,exports){
-var Renderer, Tableify,
-  hasProp = {}.hasOwnProperty;
-
-Tableify = require('tableify');
-
-require('tablesorter');
-
-module.exports = Renderer = class Renderer {
-  constructor(net, parent1, table) {
-    this.net = net;
-    this.parent = parent1;
-    this.table = table;
-    this.iconify = false;
-    this.layoutDirection = 'tb';
-    this.generateGraph();
-    this.renderTable();
-  }
-
-  setupGraph() {
-    this.graph = new dagreD3.graphlib.Graph();
-    this.graph.setDefaultEdgeLabel((function() {
-      return {};
-    }));
-    return this.graph.setGraph({
-      rankdir: this.layoutDirection,
-      ranksep: 10, // Vertical node separation
-      nodesep: 5, // Horizontal node separation
-      edgesep: 10, // Horizontal edge separation
-      marginx: 0, // Horizontal graph margin
-      marginy: 0 // Vertical graph margin
-    });
-  }
-
-  generateGraph() {
-    var child, j, k, l, lastCoalesed, layers, len, len1, len2, len3, len4, m, node, nodes, o, parent, ref, ref1, ref2, ref3, sink, source, uberParents;
-    this.setupGraph();
-    nodes = this.net.sortTopologically();
-    for (j = 0, len = nodes.length; j < len; j++) {
-      node = nodes[j];
-      if (node.isInGraph) {
-        continue;
-      }
-      layers = [node].concat(node.coalesce);
-      if (layers.length > 1) {
-        // Rewire the node following the last coalesced node to this one
-        lastCoalesed = layers[layers.length - 1];
-        ref = lastCoalesed.children;
-        for (k = 0, len1 = ref.length; k < len1; k++) {
-          child = ref[k];
-          uberParents = _.clone(child.parents);
-          uberParents[uberParents.indexOf(lastCoalesed)] = node;
-          child.parents = uberParents;
-        }
-      }
-      this.insertNode(layers);
-      ref1 = node.parents;
-      for (l = 0, len2 = ref1.length; l < len2; l++) {
-        parent = ref1[l];
-        this.insertLink(parent, node);
-      }
-    }
-    ref2 = this.graph.sources();
-    for (m = 0, len3 = ref2.length; m < len3; m++) {
-      source = ref2[m];
-      (this.graph.node(source)).class = 'node-type-source';
-    }
-    ref3 = this.graph.sinks();
-    for (o = 0, len4 = ref3.length; o < len4; o++) {
-      sink = ref3[o];
-      (this.graph.node(sink)).class = 'node-type-sink';
-    }
-    return this.render();
-  }
-
-  generateTable() {
-    var entry, id, idx, j, k, key, l, len, len1, len2, n, ref, tbl, val, variant, variantcopy, worstcasepervariant;
-    entry = {
-      name: 'start'
-    };
-    tbl = [];
-    id = 0;
-    worstcasepervariant = null;
-    ref = this.net.sortTopologically();
-    // Build up Layer Table
-    for (j = 0, len = ref.length; j < len; j++) {
-      n = ref[j];
-      // summarize Values in Variant Implementations
-      if (do_variants_analysis) {
-        if (n.analysis.variants.length > 0) {
-          if (!worstcasepervariant) { // initial copy
-            worstcasepervariant = _.cloneDeep(n.analysis.variants);
-          }
-          variantcopy = _.extend([], n.analysis.variants);
-          for (idx = k = 0, len1 = variantcopy.length; k < len1; idx = ++k) {
-            variant = variantcopy[idx];
-            for (key in variant) {
-              val = variant[key];
-              if (worstcasepervariant[idx][key] < val) {
-                worstcasepervariant[idx][key] = val;
-              }
-            }
-            for (key in variant) {
-              val = variant[key];
-              if (val > 0) {
-                variant[key] = this.toSuffixForm(val);
-              }
-            }
-          }
-        }
-      }
-      id++;
-      entry = {
-        ID: id,
-        name: n.name,
-        type: n.type,
-        batch: n.analysis.batchIn,
-        ch_in: n.analysis.chIn,
-        dim_in: n.analysis.wIn + 'x' + n.analysis.hIn,
-        ch_out: n.analysis.chOut,
-        dim_out: n.analysis.wOut + 'x' + n.analysis.hOut,
-        ops_raw: n.analysis.comp,
-        mem_raw: n.analysis.mem
-      };
-      if (do_variants_analysis) {
-        entry.implementations = n.analysis.variants;
-      }
-      tbl.push(entry);
-    }
-    if (do_variants_analysis && worstcasepervariant) {
-      // worst case variant summary
-      for (l = 0, len2 = worstcasepervariant.length; l < len2; l++) {
-        variant = worstcasepervariant[l];
-        for (key in variant) {
-          val = variant[key];
-          if (val > 0) {
-            variant[key] = this.toSuffixForm(val);
-          }
-        }
-      }
-      entry = {
-        ID: 999,
-        name: "Worst-Case Requirements",
-        implementations: worstcasepervariant
-      };
-      tbl.push(entry);
-    }
-    return tbl;
-  }
-
-  toSuffixForm(num, decimals = 2) {
-    var exponent, exponents, factor, i, j, len, suffices, suffix;
-    exponents = [12, 9, 6, 3];
-    suffices = ["T", "G", "M", "k"];
-    decimals = Math.pow(10, decimals);
-    //debugger
-    for (i = j = 0, len = exponents.length; j < len; i = ++j) {
-      exponent = exponents[i];
-      suffix = suffices[i];
-      factor = Math.pow(10, exponent);
-      if (num > factor) {
-        return Math.round(num / factor * decimals) / decimals + suffix;
-      }
-    }
-    // too small, no suffix
-    return num;
-  }
-
-  summarizeTable(tbl) {
-    var entry, j, k, key, len, len1, n, num_subs, ref, ref1, ref2, ref3, ref4, ref5, slashindex, summary, summary_without_raw, total, val;
-    entry = {
-      name: 'start'
-    };
-    summary = [];
-    num_subs = 0;
-    for (j = 0, len = tbl.length; j < len; j++) {
-      n = tbl[j];
-      slashindex = n.name.indexOf('/');
-      if (slashindex > 0 && entry.name.substring(0, slashindex) === n.name.substring(0, slashindex)) { // layer has same prefix as current summary item
-        num_subs++;
-        entry.name = n.name.substring(0, slashindex);
-        entry.type = 'submodule(' + num_subs + ')';
-        entry.ch_out = n.ch_out;
-        entry.dim_out = n.dim_out;
-        for (key in entry.ops_raw) {
-          entry.ops_raw[key] += n.ops_raw[key];
-        }
-        for (key in entry.mem_raw) {
-          entry.mem_raw[key] += n.mem_raw[key];
-        }
-        ref = entry.ops_raw;
-        for (key in ref) {
-          val = ref[key];
-          if (val > 0) {
-            entry.ops[key] = this.toSuffixForm(val);
-          }
-        }
-        ref1 = entry.mem_raw;
-        for (key in ref1) {
-          val = ref1[key];
-          if (val > 0) {
-            entry.mem[key] = this.toSuffixForm(val);
-          }
-        }
-        //debugger
-        summary.pop();
-        summary.push(entry);
-      } else {
-        num_subs = 0;
-        entry = {
-          ID: n.ID,
-          name: n.name,
-          type: n.type,
-          batch: n.batchIn,
-          ch_in: n.ch_in,
-          dim_in: n.dim_in,
-          ch_out: n.ch_out,
-          dim_out: n.dim_out,
-          ops_raw: _.extend({}, n.ops_raw),
-          mem_raw: _.extend({}, n.mem_raw),
-          ops: {},
-          mem: {}
-        };
-        ref2 = entry.ops_raw;
-        for (key in ref2) {
-          val = ref2[key];
-          if (val > 0) {
-            entry.ops[key] = this.toSuffixForm(val);
-          }
-        }
-        ref3 = entry.mem_raw;
-        for (key in ref3) {
-          val = ref3[key];
-          if (val > 0) {
-            entry.mem[key] = this.toSuffixForm(val);
-          }
-        }
-        summary.push(entry);
-      }
-    }
-    // initialize TOTAL row
-    total = {
-      name: 'TOTAL',
-      ops_raw: {},
-      mem_raw: {},
-      ops: {},
-      mem: {}
-    };
-    _.extend(total.ops_raw, summary[0].ops_raw); // copy zeros from data layer
-    _.extend(total.mem_raw, summary[0].mem_raw); // idem
-    total.mem_raw.activation = 0; // data layer already uses activation --> set to zero
-    for (k = 0, len1 = summary.length; k < len1; k++) {
-      entry = summary[k];
-      for (key in entry.ops_raw) {
-        //debugger
-        total.ops_raw[key] += entry.ops_raw[key];
-      }
-      for (key in entry.mem_raw) {
-        total.mem_raw[key] += entry.mem_raw[key];
-      }
-    }
-    ref4 = total.ops_raw;
-    for (key in ref4) {
-      val = ref4[key];
-      total.ops[key] = this.toSuffixForm(val);
-    }
-    ref5 = total.mem_raw;
-    for (key in ref5) {
-      val = ref5[key];
-      total.mem[key] = this.toSuffixForm(val);
-    }
-    summary.push(total);
-    summary_without_raw = (function() {
-      var l, len2, results;
-      results = [];
-      for (l = 0, len2 = summary.length; l < len2; l++) {
-        entry = summary[l];
-        results.push(_.omit(entry, ['ops_raw', 'mem_raw']));
-      }
-      return results;
-    })();
-    return summary_without_raw;
-  }
-
-  renderTable() {
-    var $node_elem, $table_elem, areatbl, detail, dim_in, entry, j, k, len, len1, line, ref, ref1, ref2, ref3, ref4, row, row_array, scroll_to, suffix, summary, summary_body, summary_table;
-    // Generate Detail Table and Summary
-    detail = this.generateTable();
-    summary = this.summarizeTable(detail);
-    $(this.table).html('<h3>Summary:</h3><a id="summary"></a>' + Tableify(summary) + '<h3>Details:</h3><a id="details"></a>' + Tableify(detail));
-    $(this.table + ' table').tablesorter();
-    // Add Click-to-Scroll Handlers
-    // Closure Function that executes scroll:
-    scroll_to = function(el) {
-      return function() {
-        var removeHighlight, top_coord;
-        top_coord = $(el).offset().top - 200;
-        $("body,html").animate({
-          scrollTop: top_coord
-        }, 200);
-        $(el).addClass('node-highlight');
-        removeHighlight = function(node) {
-          return function() {
-            return $(node).removeClass('node-highlight');
-          };
-        };
-        return window.setTimeout(removeHighlight(el), 4000);
-      };
-    };
-    // Add Click-to-Scroll to all summary rows, except last
-    summary_table = $(this.table + ' table')[0];
-    summary_body = summary_table.children[1];
-    row_array = Array.prototype.slice.call(summary_body.children);
-    ref = row_array.slice(0, -1);
-    for (j = 0, len = ref.length; j < len; j++) {
-      row = ref[j];
-      // Add Link between Node and Table Element -> both directions work
-      $table_elem = $(row.children[1]);
-      $node_elem = $('div[id^="node-' + $table_elem.text() + '"]');
-      $table_elem.click(scroll_to($node_elem));
-      $node_elem.click(scroll_to($table_elem));
-    }
-    if (do_variants_analysis) {
-      // Calculate Per-Layer Statistics
-      areatbl = [];
-      for (k = 0, len1 = detail.length; k < len1; k++) {
-        entry = detail[k];
-        if (!(entry.type === "Convolution" || entry.type === "Concat" || entry.type === "SoftmaxWithLoss" || entry.type === "innerproduct")) {
-          continue;
-        }
-        // extract input dimension:
-        dim_in = (ref1 = entry.dim_in) != null ? ref1.split("x").pop() : void 0;
-        // add entry
-        suffix = " " + this.net.name;
-        line = {};
-        line["layer"] = entry.name;
-        line["capacity" + suffix] = ((ref2 = entry.mem_raw) != null ? ref2.activation : void 0) > 0 ? entry.mem_raw.activation : "";
-        line["macc " + suffix] = ((ref3 = entry.ops_raw) != null ? ref3.macc : void 0) > 0 ? entry.ops_raw.macc : "";
-        line["param " + suffix] = ((ref4 = entry.mem_raw) != null ? ref4.param : void 0) > 0 ? entry.mem_raw.param : "";
-        line["ch_out " + suffix] = entry.ch_out;
-        line["width " + suffix] = dim_in;
-        areatbl.push(line);
-      }
-      $(Tableify(areatbl)).appendTo(this.table);
-    }
-    return null;
-  }
-
-  insertNode(layers) {
-    var baseNode, j, layer, len, nodeClass, nodeDesc, nodeLabel;
-    baseNode = layers[0];
-    nodeClass = 'node-type-' + baseNode.type.replace(/_/g, '-').toLowerCase();
-    nodeLabel = '';
-    for (j = 0, len = layers.length; j < len; j++) {
-      layer = layers[j];
-      layer.isInGraph = true;
-      nodeLabel += this.generateLabel(layer);
-      nodeDesc = {
-        labelType: 'html',
-        label: nodeLabel,
-        class: nodeClass,
-        layers: layers,
-        rx: 5,
-        ry: 5
-      };
-    }
-    if (this.iconify) {
-      _.extend(nodeDesc, {
-        shape: 'circle'
-      });
-    }
-    return this.graph.setNode(baseNode.name, nodeDesc);
-  }
-
-  generateLabel(layer) {
-    if (!this.iconify) {
-      return '<div class="node-label" id="node-' + layer.name + '">' + layer.name + '</div>';
-    } else {
-      return '';
-    }
-  }
-
-  insertLink(src, dst) {
-    var b, ch, h, lbl, ref, ref1, ref2, ref3, w;
-    if (!this.iconify) {
-      ch = (ref = src.analysis.chOut) != null ? ref : "?";
-      w = (ref1 = src.analysis.wOut) != null ? ref1 : "?";
-      h = (ref2 = src.analysis.hOut) != null ? ref2 : "?";
-      b = (ref3 = src.analysis.batchOut) != null ? ref3 : "?";
-      lbl = ch + 'ch ⋅ ' + w + '×' + h;
-      if (b > 1) {
-        lbl += ' (×' + b + ')';
-      }
-    } else {
-      lbl = '';
-    }
-    return this.graph.setEdge(src.name, dst.name, {
-      arrowhead: 'vee',
-      label: lbl
-    });
-  }
-
-  renderKey(key) {
-    return key.replace(/_/g, ' ');
-  }
-
-  renderValue(value) {
-    if (Array.isArray(value)) {
-      return value.join(', ');
-    }
-    return value;
-  }
-
-  renderSection(section) {
-    var isSection, key, s, val;
-    s = '';
-    for (key in section) {
-      if (!hasProp.call(section, key)) continue;
-      val = section[key];
-      isSection = (typeof val === 'object') && !Array.isArray(val);
-      if (isSection) {
-        s += '<div class="node-param-section-title node-param-key">' + this.renderKey(key) + '</div>';
-        s += '<div class="node-param-section">';
-        s += this.renderSection(val);
-      } else {
-        s += '<div class="node-param-row">';
-        s += '<span class="node-param-key">' + this.renderKey(key) + ': </span>';
-        s += '<span class="node-param-value">' + this.renderValue(val) + '</span>';
-      }
-      s += '</div>';
-    }
-    return s;
-  }
-
-  tipForNode(nodeKey) {
-    var j, layer, len, node, ref, s;
-    node = this.graph.node(nodeKey);
-    s = '';
-    ref = node.layers;
-    for (j = 0, len = ref.length; j < len; j++) {
-      layer = ref[j];
-      s += '<div class="node-info-group">';
-      s += '<div class="node-info-header">';
-      s += '<span class="node-info-title">' + layer.name + '</span>';
-      s += ' &middot; ';
-      s += '<span class="node-info-type">' + this.renderKey(layer.type) + '</span>';
-      if (layer.annotation != null) {
-        s += ' &middot; <span class="node-info-annotation">' + layer.annotation + '</span>';
-      }
-      s += '</div>';
-      s += this.renderSection(layer.attribs);
-    }
-    return s;
-  }
-
-  render() {
-    var bbox, graphRender, svg, svgGroup, that, tipPositions;
-    svg = d3.select(this.parent);
-    svgGroup = svg.append('g');
-    graphRender = new dagreD3.render();
-    graphRender(svgGroup, this.graph);
-    // Size to fit.
-    // getBBox appears to do the right thing on Chrome,
-    // but not on Firefox. getBoundingClientRect works on both.
-    bbox = svgGroup.node().getBoundingClientRect();
-    svg.attr('width', bbox.width);
-    svg.attr('height', bbox.height);
-    // Configure Tooltips.
-    tipPositions = {
-      tb: {
-        my: 'left center',
-        at: 'right center'
-      },
-      lr: {
-        my: 'top center',
-        at: 'bottom center'
-      }
-    };
-    that = this;
-    return svgGroup.selectAll("g.node").each(function(nodeKey) {
-      var position;
-      position = tipPositions[that.layoutDirection];
-      position.viewport = $(window);
-      return $(this).qtip({
-        content: {
-          text: that.tipForNode(nodeKey)
-        },
-        position: position,
-        show: {
-          delay: 0,
-          effect: false
-        },
-        hide: {
-          effect: false
-        }
-      });
-    });
-  }
-
-};
-
-
-},{"tableify":2,"tablesorter":3}]},{},[10]);
+},{"jquery":10}]},{},[7]);
