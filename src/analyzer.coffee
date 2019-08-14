@@ -484,7 +484,7 @@ module.exports =
                         console.log(n)
                         debugger;
 
-                  when "roipooling"
+                when "roipooling"
                       # 2 parent layers: region proposals, feature vectors
                       roi_proposals = if (n.parents[0].analysis.batchOut > 1) then n.parents[0].analysis else n.parents[1].analysis # parent with batchOut > 1 = region proposals
                       feature_map   = if (n.parents[0].analysis.batchOut > 1) then n.parents[1].analysis else n.parents[0].analysis # features = the other one
